@@ -54,7 +54,40 @@ app.get('/favicon.ico', (req, res) => {
     res.status(204).end();
 });
 
-// Serve index.html for all routes
+// Handle healthcheck explicitly
+app.get('/', (req, res) => {
+    console.log('Healthcheck request received');
+    try {
+        const indexPath = path.join(publicDir, 'index.html');
+        console.log('Checking if index.html exists at:', indexPath);
+        
+        if (!fs.existsSync(indexPath)) {
+            console.error('ERROR: index.html not found at:', indexPath);
+            return res.status(500).json({ error: 'Server configuration error: index.html not found' });
+        }
+
+        // Set security headers
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('X-XSS-Protection', '1; mode=block');
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+
+        // For healthcheck, just verify we can read the file
+        fs.readFile(indexPath, (err, data) => {
+            if (err) {
+                console.error('Error reading index.html:', err);
+                return res.status(500).json({ error: 'Error reading index.html' });
+            }
+            console.log('Successfully read index.html, size:', data.length);
+            res.sendFile(indexPath);
+        });
+    } catch (error) {
+        console.error('Error in healthcheck handler:', error);
+        res.status(500).json({ error: 'Internal server error during healthcheck' });
+    }
+});
+
+// Serve index.html for all other routes
 app.get('*', (req, res, next) => {
     const indexPath = path.join(publicDir, 'index.html');
     console.log(`[${new Date().toISOString()}] Attempting to serve index.html from:`, indexPath);
@@ -83,7 +116,7 @@ app.get('*', (req, res, next) => {
 app.use((err, req, res, next) => {
     console.error('Server error:', err);
     console.error('Stack trace:', err.stack);
-    res.status(500).send('Internal Server Error');
+    res.status(500).json({ error: 'Internal Server Error', details: err.message });
 });
 
 // Start server with error handling
@@ -91,6 +124,16 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     const host = server.address();
     console.log(`Server is running on ${host.address}:${host.port}`);
     console.log(`Server URL: http://${host.address}:${host.port}`);
+    
+    // Verify we can read index.html after server starts
+    const indexPath = path.join(publicDir, 'index.html');
+    fs.readFile(indexPath, (err, data) => {
+        if (err) {
+            console.error('ERROR: Could not read index.html after server start:', err);
+            process.exit(1);
+        }
+        console.log('Successfully verified index.html after server start, size:', data.length);
+    });
 });
 
 // Handle server errors
