@@ -6,8 +6,6 @@ buildCommand = "npm ci"
 startCommand = "node server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 3
 
 [env]
 NODE_ENV = "production"
