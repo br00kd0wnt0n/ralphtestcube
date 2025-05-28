@@ -7,7 +7,7 @@ healthcheckPath = "/"
 healthcheckTimeout = 300
 
 [phases.setup]
-nixPkgs = ["nodejs"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["npm install"]
@@ -18,4 +18,7 @@ cmds = ["npm start"]
 [phases.healthcheck]
 interval = "30s"
 timeout = "10s"
-retries = 3 
+retries = 3
+
+[env]
+NODE_ENV = "production" 

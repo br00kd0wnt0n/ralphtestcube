@@ -12,14 +12,31 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve static files from the public directory
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from the public directory with explicit options
+app.use(express.static(path.join(__dirname, 'public'), {
+    dotfiles: 'ignore',
+    etag: true,
+    index: false,
+    maxAge: '1h'
+}));
+
+// Handle favicon requests
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end(); // No content for favicon
+});
 
 // Explicitly handle root path
 app.get('/', (req, res) => {
     console.log('Handling root path request');
     try {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        const indexPath = path.join(__dirname, 'public', 'index.html');
+        console.log('Attempting to serve index.html from:', indexPath);
+        res.sendFile(indexPath, (err) => {
+            if (err) {
+                console.error('Error sending index.html:', err);
+                res.status(500).send('Error loading page');
+            }
+        });
     } catch (error) {
         console.error('Error serving index.html:', error);
         res.status(500).send('Internal Server Error');
@@ -30,7 +47,14 @@ app.get('/', (req, res) => {
 app.get('*', (req, res) => {
     console.log('Handling wildcard route:', req.url);
     try {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        const indexPath = path.join(__dirname, 'public', 'index.html');
+        console.log('Attempting to serve index.html from:', indexPath);
+        res.sendFile(indexPath, (err) => {
+            if (err) {
+                console.error('Error sending index.html:', err);
+                res.status(500).send('Error loading page');
+            }
+        });
     } catch (error) {
         console.error('Error serving index.html:', error);
         res.status(500).send('Internal Server Error');
@@ -46,10 +70,12 @@ app.use((err, req, res, next) => {
 
 // Start server with error handling
 const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT}`);
+    const host = server.address();
+    console.log(`Server is running on ${host.address}:${host.port}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Current working directory: ${process.cwd()}`);
     console.log(`Public directory path: ${path.join(__dirname, 'public')}`);
+    console.log(`Available files in public directory:`, require('fs').readdirSync(path.join(__dirname, 'public')));
 });
 
 // Handle server errors
@@ -58,4 +84,13 @@ server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
         console.error(`Port ${PORT} is already in use`);
     }
+});
+
+// Handle process termination
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Shutting down gracefully...');
+    server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+    });
 }); 
