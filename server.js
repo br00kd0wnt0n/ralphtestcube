@@ -2,8 +2,8 @@ const express = require('express');
 const path = require('path');
 const app = express();
 
-// Get port from environment variable or use 3000 as fallback
-const PORT = process.env.PORT || 3000;
+// Get port from environment variable or use 3002 as fallback
+const PORT = process.env.PORT || 3002;
 
 // Basic request logging
 app.use((req, res, next) => {
