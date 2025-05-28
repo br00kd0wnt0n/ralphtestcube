@@ -6,18 +6,26 @@ const app = express();
 // Get port from environment variable or use 3000 as fallback
 const PORT = process.env.PORT || 3000;
 
-// Get absolute paths - handle Docker container paths
-const ROOT_DIR = process.env.RAILWAY_WORKSPACE_DIR || process.cwd();
+// Get absolute paths - handle Docker container paths explicitly
+const IS_DOCKER = process.env.RAILWAY_WORKSPACE_DIR === '/app';
+const ROOT_DIR = IS_DOCKER ? '/app' : process.cwd();
 const SERVER_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const INDEX_PATH = path.join(PUBLIC_DIR, 'index.html');
 
-// Log absolute paths and directory structure
-console.log('\n=== Server Path Configuration ===');
+// Log Docker and environment information
+console.log('\n=== Docker Environment Information ===');
+console.log('Is Docker container:', IS_DOCKER);
 console.log('Environment variables:');
 console.log('- RAILWAY_WORKSPACE_DIR:', process.env.RAILWAY_WORKSPACE_DIR || 'not set');
 console.log('- NODE_ENV:', process.env.NODE_ENV || 'not set');
-console.log('\nPath resolution:');
+console.log('- PORT:', PORT);
+console.log('- Node version:', process.version);
+console.log('- Platform:', process.platform);
+
+// Log absolute paths and directory structure
+console.log('\n=== Server Path Configuration ===');
+console.log('Path resolution:');
 console.log('- Root directory (cwd):', ROOT_DIR);
 console.log('- Server directory (__dirname):', SERVER_DIR);
 console.log('- Public directory:', PUBLIC_DIR);
@@ -170,9 +178,13 @@ app.get('/', (req, res) => {
                 rootDir: ROOT_DIR,
                 publicDir: PUBLIC_DIR,
                 serverDir: SERVER_DIR,
+                isDocker: IS_DOCKER,
                 env: {
                     NODE_ENV: process.env.NODE_ENV,
-                    RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+                    RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
+                    PORT: PORT,
+                    NODE_VERSION: process.version,
+                    PLATFORM: process.platform
                 }
             });
         }
@@ -196,9 +208,13 @@ app.get('/', (req, res) => {
                     rootDir: ROOT_DIR,
                     publicDir: PUBLIC_DIR,
                     serverDir: SERVER_DIR,
+                    isDocker: IS_DOCKER,
                     env: {
                         NODE_ENV: process.env.NODE_ENV,
-                        RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+                        RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
+                        PORT: PORT,
+                        NODE_VERSION: process.version,
+                        PLATFORM: process.platform
                     }
                 });
             }
@@ -215,9 +231,13 @@ app.get('/', (req, res) => {
                         rootDir: ROOT_DIR,
                         publicDir: PUBLIC_DIR,
                         serverDir: SERVER_DIR,
+                        isDocker: IS_DOCKER,
                         env: {
                             NODE_ENV: process.env.NODE_ENV,
-                            RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+                            RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
+                            PORT: PORT,
+                            NODE_VERSION: process.version,
+                            PLATFORM: process.platform
                         }
                     });
                 }
@@ -235,9 +255,13 @@ app.get('/', (req, res) => {
             rootDir: ROOT_DIR,
             publicDir: PUBLIC_DIR,
             serverDir: SERVER_DIR,
+            isDocker: IS_DOCKER,
             env: {
                 NODE_ENV: process.env.NODE_ENV,
-                RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+                RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
+                PORT: PORT,
+                NODE_VERSION: process.version,
+                PLATFORM: process.platform
             }
         });
     }
