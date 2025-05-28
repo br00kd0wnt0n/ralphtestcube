@@ -29,6 +29,11 @@ app.get('/health', (req, res) => {
         console.log('Public directory:', publicDir);
         console.log('Index path:', indexPath);
         
+        // List files in public directory
+        const fs = require('fs');
+        const publicFiles = fs.readdirSync(publicDir);
+        const backgroundFiles = fs.readdirSync(path.join(publicDir, 'backgrounds'));
+        
         res.json({
             status: 'ok',
             timestamp: new Date().toISOString(),
@@ -43,6 +48,10 @@ app.get('/health', (req, res) => {
             paths: {
                 public: publicDir,
                 index: indexPath
+            },
+            files: {
+                public: publicFiles,
+                backgrounds: backgroundFiles
             }
         });
     } catch (error) {
@@ -65,16 +74,35 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Serve static files from the public directory
-app.use(express.static(path.join(__dirname, 'public'), {
+// Serve static files from the public directory with detailed logging
+const staticMiddleware = express.static(path.join(__dirname, 'public'), {
     fallthrough: true,
     dotfiles: 'allow'
-}));
+});
+
+app.use((req, res, next) => {
+    const originalSendFile = res.sendFile;
+    res.sendFile = function(path, options, callback) {
+        console.log('Serving file:', {
+            requestedPath: req.path,
+            resolvedPath: path,
+            exists: require('fs').existsSync(path)
+        });
+        return originalSendFile.call(this, path, options, callback);
+    };
+    next();
+});
+
+app.use(staticMiddleware);
 
 // Handle all other routes by serving index.html
 app.get('*', (req, res, next) => {
     const indexPath = path.join(__dirname, 'public', 'index.html');
-    console.log('Serving index.html from:', indexPath);
+    console.log('Serving index.html for route:', {
+        requestedPath: req.path,
+        indexPath: indexPath,
+        exists: require('fs').existsSync(indexPath)
+    });
     res.sendFile(indexPath, (err) => {
         if (err) {
             console.error('Error serving index.html:', err);
@@ -94,6 +122,19 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         PORT: process.env.PORT,
         RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
     });
+    
+    // List files in public directory on startup
+    const fs = require('fs');
+    try {
+        const publicFiles = fs.readdirSync(path.join(__dirname, 'public'));
+        const backgroundFiles = fs.readdirSync(path.join(__dirname, 'public', 'backgrounds'));
+        console.log('Available files:', {
+            public: publicFiles,
+            backgrounds: backgroundFiles
+        });
+    } catch (error) {
+        console.error('Error listing files:', error);
+    }
 });
 
 server.on('error', (error) => {
