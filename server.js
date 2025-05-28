@@ -22,8 +22,69 @@ let lastContainerState = {
     filesystemMounts: new Set(),
     fileCount: 0,
     errorCount: 0,
-    restartCount: 0
+    restartCount: 0,
+    isContainer: false,
+    containerType: null,
+    containerPath: null
 };
+
+// Function to detect container environment
+async function detectContainer() {
+    const state = {
+        isContainer: false,
+        containerType: null,
+        containerPath: null,
+        timestamp: new Date().toISOString()
+    };
+
+    try {
+        // Check common container environment variables
+        if (process.env.RAILWAY_WORKSPACE_DIR) {
+            state.isContainer = true;
+            state.containerType = 'railway';
+            state.containerPath = process.env.RAILWAY_WORKSPACE_DIR;
+        } else if (process.env.KUBERNETES_SERVICE_HOST) {
+            state.isContainer = true;
+            state.containerType = 'kubernetes';
+            state.containerPath = process.cwd();
+        } else if (process.env.DOCKER_CONTAINER) {
+            state.isContainer = true;
+            state.containerType = 'docker';
+            state.containerPath = process.cwd();
+        }
+
+        // Check for container-specific files
+        const containerFiles = [
+            '/.dockerenv',
+            '/proc/1/cgroup',
+            '/proc/1/ns/pid'
+        ];
+
+        for (const file of containerFiles) {
+            try {
+                await fs.promises.access(file);
+                state.isContainer = true;
+                state.containerType = state.containerType || 'docker';
+                state.containerPath = process.cwd();
+                break;
+            } catch (error) {
+                // File doesn't exist, continue checking
+            }
+        }
+
+        // Check if we're in a container-like environment
+        if (!state.isContainer && process.cwd().startsWith('/app')) {
+            state.isContainer = true;
+            state.containerType = 'unknown';
+            state.containerPath = process.cwd();
+        }
+
+        return state;
+    } catch (error) {
+        console.error('Error detecting container:', error);
+        return state;
+    }
+}
 
 // Function to check container filesystem state
 async function checkContainerState() {
@@ -36,15 +97,47 @@ async function checkContainerState() {
     };
 
     try {
-        // Check if we're in a container
-        const isContainer = process.env.RAILWAY_WORKSPACE_DIR !== undefined;
-        currentState.isContainer = isContainer;
+        // Detect container environment
+        const containerInfo = await detectContainer();
+        Object.assign(currentState, containerInfo);
 
-        // Get filesystem mounts
-        if (isContainer) {
+        // Get filesystem mounts if in container
+        if (currentState.isContainer) {
             try {
-                const mounts = await fs.promises.readFile('/proc/mounts', 'utf8');
-                currentState.filesystemMounts = new Set(mounts.split('\n').map(line => line.split(' ')[1]));
+                // Try different methods to get mount information
+                const mountMethods = [
+                    async () => {
+                        const mounts = await fs.promises.readFile('/proc/mounts', 'utf8');
+                        return new Set(mounts.split('\n').map(line => line.split(' ')[1]));
+                    },
+                    async () => {
+                        const { exec } = require('child_process');
+                        return new Promise((resolve, reject) => {
+                            exec('mount', (error, stdout) => {
+                                if (error) reject(error);
+                                else resolve(new Set(stdout.split('\n').map(line => line.split(' ')[2])));
+                            });
+                        });
+                    },
+                    async () => {
+                        const { exec } = require('child_process');
+                        return new Promise((resolve, reject) => {
+                            exec('df -h', (error, stdout) => {
+                                if (error) reject(error);
+                                else resolve(new Set(stdout.split('\n').map(line => line.split(' ').pop())));
+                            });
+                        });
+                    }
+                ];
+
+                for (const method of mountMethods) {
+                    try {
+                        currentState.filesystemMounts = await method();
+                        if (currentState.filesystemMounts.size > 0) break;
+                    } catch (error) {
+                        console.error('Error getting mount information:', error);
+                    }
+                }
             } catch (error) {
                 console.error('Error reading container mounts:', error);
             }
@@ -56,6 +149,8 @@ async function checkContainerState() {
             console.log('Container filesystem mounts changed:', {
                 old: Array.from(lastContainerState.filesystemMounts),
                 new: Array.from(currentState.filesystemMounts),
+                containerType: currentState.containerType,
+                containerPath: currentState.containerPath,
                 timestamp: currentState.timestamp
             });
         }
