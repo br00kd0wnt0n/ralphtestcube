@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const app = express();
 
 // Get port from environment variable or use 3002 as fallback
@@ -29,10 +30,27 @@ app.get('/health', (req, res) => {
         console.log('Public directory:', publicDir);
         console.log('Index path:', indexPath);
         
-        // List files in public directory
-        const fs = require('fs');
-        const publicFiles = fs.readdirSync(publicDir);
-        const backgroundFiles = fs.readdirSync(path.join(publicDir, 'backgrounds'));
+        // List files in public directory with stats
+        const publicFiles = fs.readdirSync(publicDir).map(file => {
+            const filePath = path.join(publicDir, file);
+            const stats = fs.statSync(filePath);
+            return {
+                name: file,
+                size: stats.size,
+                permissions: stats.mode.toString(8),
+                isDirectory: stats.isDirectory()
+            };
+        });
+        
+        const backgroundFiles = fs.readdirSync(path.join(publicDir, 'backgrounds')).map(file => {
+            const filePath = path.join(publicDir, 'backgrounds', file);
+            const stats = fs.statSync(filePath);
+            return {
+                name: file,
+                size: stats.size,
+                permissions: stats.mode.toString(8)
+            };
+        });
         
         res.json({
             status: 'ok',
@@ -74,24 +92,45 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Serve static files from the public directory with detailed logging
-const staticMiddleware = express.static(path.join(__dirname, 'public'), {
-    fallthrough: true,
-    dotfiles: 'allow'
-});
+// Custom static file middleware with detailed logging
+const staticMiddleware = (req, res, next) => {
+    const publicDir = path.join(__dirname, 'public');
+    const requestedPath = req.path;
+    const fullPath = path.join(publicDir, requestedPath);
+    
+    console.log('Static file request:', {
+        requestedPath,
+        fullPath,
+        exists: fs.existsSync(fullPath),
+        isFile: fs.existsSync(fullPath) ? fs.statSync(fullPath).isFile() : false,
+        permissions: fs.existsSync(fullPath) ? fs.statSync(fullPath).mode.toString(8) : null
+    });
 
-app.use((req, res, next) => {
-    const originalSendFile = res.sendFile;
-    res.sendFile = function(path, options, callback) {
-        console.log('Serving file:', {
-            requestedPath: req.path,
-            resolvedPath: path,
-            exists: require('fs').existsSync(path)
+    // Check if file exists and is accessible
+    try {
+        if (fs.existsSync(fullPath)) {
+            const stats = fs.statSync(fullPath);
+            if (stats.isFile()) {
+                // File exists and is accessible, let express.static handle it
+                return express.static(publicDir)(req, res, next);
+            }
+        }
+        // File doesn't exist or isn't accessible
+        console.log('File not found or not accessible:', {
+            requestedPath,
+            fullPath,
+            error: 'File not found or not accessible'
         });
-        return originalSendFile.call(this, path, options, callback);
-    };
-    next();
-});
+        next();
+    } catch (error) {
+        console.error('Error accessing file:', {
+            requestedPath,
+            fullPath,
+            error: error.message
+        });
+        next(error);
+    }
+};
 
 app.use(staticMiddleware);
 
@@ -101,7 +140,8 @@ app.get('*', (req, res, next) => {
     console.log('Serving index.html for route:', {
         requestedPath: req.path,
         indexPath: indexPath,
-        exists: require('fs').existsSync(indexPath)
+        exists: fs.existsSync(indexPath),
+        permissions: fs.existsSync(indexPath) ? fs.statSync(indexPath).mode.toString(8) : null
     });
     res.sendFile(indexPath, (err) => {
         if (err) {
@@ -123,11 +163,29 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
     });
     
-    // List files in public directory on startup
-    const fs = require('fs');
+    // List files in public directory on startup with stats
     try {
-        const publicFiles = fs.readdirSync(path.join(__dirname, 'public'));
-        const backgroundFiles = fs.readdirSync(path.join(__dirname, 'public', 'backgrounds'));
+        const publicFiles = fs.readdirSync(path.join(__dirname, 'public')).map(file => {
+            const filePath = path.join(__dirname, 'public', file);
+            const stats = fs.statSync(filePath);
+            return {
+                name: file,
+                size: stats.size,
+                permissions: stats.mode.toString(8),
+                isDirectory: stats.isDirectory()
+            };
+        });
+        
+        const backgroundFiles = fs.readdirSync(path.join(__dirname, 'public', 'backgrounds')).map(file => {
+            const filePath = path.join(__dirname, 'public', 'backgrounds', file);
+            const stats = fs.statSync(filePath);
+            return {
+                name: file,
+                size: stats.size,
+                permissions: stats.mode.toString(8)
+            };
+        });
+        
         console.log('Available files:', {
             public: publicFiles,
             backgrounds: backgroundFiles
