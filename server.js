@@ -6,14 +6,18 @@ const app = express();
 // Get port from environment variable or use 3000 as fallback
 const PORT = process.env.PORT || 3000;
 
-// Get absolute paths - handle Railway's root directory configuration
-const ROOT_DIR = process.cwd(); // This will be '.' in Railway
+// Get absolute paths - handle Docker container paths
+const ROOT_DIR = process.env.RAILWAY_WORKSPACE_DIR || process.cwd();
 const SERVER_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const INDEX_PATH = path.join(PUBLIC_DIR, 'index.html');
 
 // Log absolute paths and directory structure
-console.log('Directory structure:');
+console.log('\n=== Server Path Configuration ===');
+console.log('Environment variables:');
+console.log('- RAILWAY_WORKSPACE_DIR:', process.env.RAILWAY_WORKSPACE_DIR || 'not set');
+console.log('- NODE_ENV:', process.env.NODE_ENV || 'not set');
+console.log('\nPath resolution:');
 console.log('- Root directory (cwd):', ROOT_DIR);
 console.log('- Server directory (__dirname):', SERVER_DIR);
 console.log('- Public directory:', PUBLIC_DIR);
@@ -21,8 +25,9 @@ console.log('- Index file path:', INDEX_PATH);
 
 // List all files in root directory to verify structure
 try {
-    console.log('\nFiles in root directory:');
+    console.log('\n=== Root Directory Contents ===');
     const rootFiles = fs.readdirSync(ROOT_DIR);
+    console.log(`Found ${rootFiles.length} items in root directory:`);
     rootFiles.forEach(file => {
         try {
             const filePath = path.join(ROOT_DIR, file);
@@ -31,21 +36,86 @@ try {
                 isDirectory: stats.isDirectory(),
                 mode: stats.mode.toString(8),
                 size: stats.size,
-                path: filePath
+                path: filePath,
+                absolutePath: path.resolve(filePath)
             });
         } catch (error) {
             console.error(`  Error getting stats for ${file}:`, error);
         }
     });
 } catch (error) {
-    console.error('ERROR: Could not read root directory:', error);
+    console.error('\nERROR: Could not read root directory:', error);
+    console.error('Attempted path:', ROOT_DIR);
+    console.error('Error details:', error.message);
+    process.exit(1);
+}
+
+// Verify public directory exists and is accessible
+try {
+    console.log('\n=== Public Directory Verification ===');
+    const stats = fs.statSync(PUBLIC_DIR);
+    console.log('Public directory stats:', {
+        isDirectory: stats.isDirectory(),
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid,
+        size: stats.size,
+        path: PUBLIC_DIR,
+        absolutePath: path.resolve(PUBLIC_DIR)
+    });
+
+    // List files in public directory
+    console.log('\nFiles in public directory:');
+    const files = fs.readdirSync(PUBLIC_DIR);
+    files.forEach(file => {
+        try {
+            const filePath = path.join(PUBLIC_DIR, file);
+            const stats = fs.statSync(filePath);
+            console.log(`  ${file}:`, {
+                isDirectory: stats.isDirectory(),
+                mode: stats.mode.toString(8),
+                size: stats.size,
+                path: filePath,
+                absolutePath: path.resolve(filePath)
+            });
+        } catch (error) {
+            console.error(`  Error getting stats for ${file}:`, error);
+        }
+    });
+} catch (error) {
+    console.error('\nERROR: Could not access public directory:', error);
+    console.error('Attempted path:', PUBLIC_DIR);
+    console.error('Error details:', error.message);
+    process.exit(1);
+}
+
+// Verify index.html exists and is readable
+try {
+    console.log('\n=== Index File Verification ===');
+    const stats = fs.statSync(INDEX_PATH);
+    console.log('index.html stats:', {
+        exists: true,
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid,
+        size: stats.size,
+        path: INDEX_PATH,
+        absolutePath: path.resolve(INDEX_PATH)
+    });
+    // Try to read the file
+    fs.accessSync(INDEX_PATH, fs.constants.R_OK);
+    console.log('index.html is readable');
+} catch (error) {
+    console.error('\nERROR: index.html is not accessible:', error);
+    console.error('Attempted path:', INDEX_PATH);
+    console.error('Error details:', error.message);
     process.exit(1);
 }
 
 // Add detailed logging middleware
 app.use((req, res, next) => {
     const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] ${req.method} ${req.url}`);
+    console.log(`\n[${timestamp}] Request: ${req.method} ${req.url}`);
     console.log(`[${timestamp}] Headers:`, JSON.stringify(req.headers, null, 2));
     console.log(`[${timestamp}] Environment:`, process.env.NODE_ENV);
     console.log(`[${timestamp}] Working directory:`, ROOT_DIR);
@@ -64,69 +134,6 @@ console.log('- Port:', PORT);
 console.log('- Process user:', process.getuid ? process.getuid() : 'unknown');
 console.log('- Process group:', process.getgid ? process.getgid() : 'unknown');
 
-// Verify public directory exists and is accessible
-try {
-    const stats = fs.statSync(PUBLIC_DIR);
-    console.log('\nPublic directory stats:', {
-        isDirectory: stats.isDirectory(),
-        mode: stats.mode.toString(8),
-        uid: stats.uid,
-        gid: stats.gid,
-        size: stats.size,
-        path: PUBLIC_DIR
-    });
-} catch (error) {
-    console.error('ERROR: Could not access public directory:', error);
-    console.error('Attempted path:', PUBLIC_DIR);
-    process.exit(1);
-}
-
-// List files in public directory with detailed stats
-try {
-    console.log('\nFiles in public directory:');
-    const files = fs.readdirSync(PUBLIC_DIR);
-    files.forEach(file => {
-        try {
-            const filePath = path.join(PUBLIC_DIR, file);
-            const stats = fs.statSync(filePath);
-            console.log(`  ${file}:`, {
-                isDirectory: stats.isDirectory(),
-                mode: stats.mode.toString(8),
-                uid: stats.uid,
-                gid: stats.gid,
-                size: stats.size,
-                path: filePath
-            });
-        } catch (error) {
-            console.error(`  Error getting stats for ${file}:`, error);
-        }
-    });
-} catch (error) {
-    console.error('ERROR: Could not read public directory:', error);
-    console.error('Attempted path:', PUBLIC_DIR);
-    process.exit(1);
-}
-
-// Verify index.html exists and is readable
-try {
-    const stats = fs.statSync(INDEX_PATH);
-    console.log('\nindex.html stats:', {
-        exists: true,
-        mode: stats.mode.toString(8),
-        uid: stats.uid,
-        gid: stats.gid,
-        size: stats.size,
-        path: INDEX_PATH
-    });
-    // Try to read the file
-    fs.accessSync(INDEX_PATH, fs.constants.R_OK);
-    console.log('- index.html is readable');
-} catch (error) {
-    console.error('ERROR: index.html is not accessible:', error);
-    console.error('Attempted path:', INDEX_PATH);
-    process.exit(1);
-}
-
 // Serve static files from the public directory with explicit options
 app.use(express.static(PUBLIC_DIR, {
     dotfiles: 'ignore',
@@ -143,7 +150,7 @@ app.get('/favicon.ico', (req, res) => {
 
 // Handle healthcheck explicitly
 app.get('/', (req, res) => {
-    console.log('\nHealthcheck request received');
+    console.log('\n=== Healthcheck Request ===');
     console.log('Checking index.html at:', INDEX_PATH);
     
     try {
@@ -158,10 +165,15 @@ app.get('/', (req, res) => {
                 error: 'Server configuration error', 
                 details: 'index.html is not accessible',
                 path: INDEX_PATH,
+                absolutePath: path.resolve(INDEX_PATH),
                 errorMessage: error.message,
                 rootDir: ROOT_DIR,
                 publicDir: PUBLIC_DIR,
-                serverDir: SERVER_DIR
+                serverDir: SERVER_DIR,
+                env: {
+                    NODE_ENV: process.env.NODE_ENV,
+                    RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+                }
             });
         }
 
@@ -180,9 +192,14 @@ app.get('/', (req, res) => {
                     error: 'Error reading index.html',
                     details: err.message,
                     path: INDEX_PATH,
+                    absolutePath: path.resolve(INDEX_PATH),
                     rootDir: ROOT_DIR,
                     publicDir: PUBLIC_DIR,
-                    serverDir: SERVER_DIR
+                    serverDir: SERVER_DIR,
+                    env: {
+                        NODE_ENV: process.env.NODE_ENV,
+                        RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+                    }
                 });
             }
             console.log('Successfully read index.html, size:', data.length);
@@ -194,9 +211,14 @@ app.get('/', (req, res) => {
                         error: 'Error sending index.html',
                         details: err.message,
                         path: INDEX_PATH,
+                        absolutePath: path.resolve(INDEX_PATH),
                         rootDir: ROOT_DIR,
                         publicDir: PUBLIC_DIR,
-                        serverDir: SERVER_DIR
+                        serverDir: SERVER_DIR,
+                        env: {
+                            NODE_ENV: process.env.NODE_ENV,
+                            RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+                        }
                     });
                 }
                 console.log('Successfully sent index.html');
@@ -209,9 +231,14 @@ app.get('/', (req, res) => {
             details: error.message,
             stack: error.stack,
             path: INDEX_PATH,
+            absolutePath: path.resolve(INDEX_PATH),
             rootDir: ROOT_DIR,
             publicDir: PUBLIC_DIR,
-            serverDir: SERVER_DIR
+            serverDir: SERVER_DIR,
+            env: {
+                NODE_ENV: process.env.NODE_ENV,
+                RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
+            }
         });
     }
 });
