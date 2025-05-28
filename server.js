@@ -8,10 +8,11 @@ const PORT = process.env.PORT || 3002;
 
 // Cache for file stats to reduce filesystem operations
 const fileStatsCache = new Map();
-const CACHE_TTL = 60000; // 1 minute cache TTL
+const CACHE_TTL = 30000; // 30 second cache TTL
+const FILESYSTEM_CHECK_INTERVAL = 15000; // Check filesystem every 15 seconds
 
-// Function to get file stats with caching
-function getFileStats(filePath) {
+// Function to get file stats with caching and retry
+async function getFileStats(filePath, retries = 3) {
     const now = Date.now();
     const cached = fileStatsCache.get(filePath);
     
@@ -19,39 +20,109 @@ function getFileStats(filePath) {
         return cached.stats;
     }
     
-    try {
-        const stats = fs.statSync(filePath);
-        fileStatsCache.set(filePath, {
-            stats,
-            timestamp: now
-        });
-        return stats;
-    } catch (error) {
-        console.error('Error getting file stats:', {
-            filePath,
-            error: error.message
-        });
-        return null;
+    for (let i = 0; i < retries; i++) {
+        try {
+            const stats = await fs.promises.stat(filePath);
+            fileStatsCache.set(filePath, {
+                stats,
+                timestamp: now
+            });
+            return stats;
+        } catch (error) {
+            console.error(`Error getting file stats (attempt ${i + 1}/${retries}):`, {
+                filePath,
+                error: error.message
+            });
+            if (i === retries - 1) throw error;
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between retries
+        }
     }
+    return null;
 }
 
-// Function to verify file accessibility
-function verifyFileAccess(filePath) {
+// Function to verify file accessibility with retry
+async function verifyFileAccess(filePath, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const stats = await getFileStats(filePath);
+            if (!stats) return false;
+            
+            // Check if file is readable
+            await fs.promises.access(filePath, fs.constants.R_OK);
+            return true;
+        } catch (error) {
+            console.error(`File access error (attempt ${i + 1}/${retries}):`, {
+                filePath,
+                error: error.message
+            });
+            if (i === retries - 1) return false;
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between retries
+        }
+    }
+    return false;
+}
+
+// Function to check filesystem health
+async function checkFilesystemHealth() {
+    const publicDir = path.join(__dirname, 'public');
+    const backgroundsDir = path.join(publicDir, 'backgrounds');
+    
     try {
-        const stats = getFileStats(filePath);
-        if (!stats) return false;
+        console.log('Checking filesystem health...');
         
-        // Check if file is readable
-        fs.accessSync(filePath, fs.constants.R_OK);
+        // Check public directory
+        const publicStats = await getFileStats(publicDir);
+        if (!publicStats || !publicStats.isDirectory()) {
+            console.error('Public directory is not accessible');
+            return false;
+        }
+        
+        // Check backgrounds directory
+        const backgroundsStats = await getFileStats(backgroundsDir);
+        if (!backgroundsStats || !backgroundsStats.isDirectory()) {
+            console.error('Backgrounds directory is not accessible');
+            return false;
+        }
+        
+        // Check all files
+        const files = await fs.promises.readdir(publicDir);
+        for (const file of files) {
+            const filePath = path.join(publicDir, file);
+            const isAccessible = await verifyFileAccess(filePath);
+            console.log(`File ${file} accessibility:`, {
+                path: filePath,
+                isAccessible,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Check background images
+        const backgroundFiles = await fs.promises.readdir(backgroundsDir);
+        for (const file of backgroundFiles) {
+            const filePath = path.join(backgroundsDir, file);
+            const isAccessible = await verifyFileAccess(filePath);
+            console.log(`Background file ${file} accessibility:`, {
+                path: filePath,
+                isAccessible,
+                timestamp: new Date().toISOString()
+            });
+        }
+        
         return true;
     } catch (error) {
-        console.error('File access error:', {
-            filePath,
-            error: error.message
-        });
+        console.error('Filesystem health check failed:', error);
         return false;
     }
 }
+
+// Start periodic filesystem health checks
+setInterval(async () => {
+    const isHealthy = await checkFilesystemHealth();
+    if (!isHealthy) {
+        console.error('Filesystem health check failed, clearing cache');
+        fileStatsCache.clear();
+    }
+}, FILESYSTEM_CHECK_INTERVAL);
 
 // Basic request logging with more details
 app.use((req, res, next) => {
@@ -68,7 +139,7 @@ app.use((req, res, next) => {
 });
 
 // Health check endpoint with more details
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
     try {
         const publicDir = path.join(__dirname, 'public');
         const indexPath = path.join(publicDir, 'index.html');
@@ -78,10 +149,10 @@ app.get('/health', (req, res) => {
         console.log('Index path:', indexPath);
         
         // List files in public directory with stats and accessibility
-        const publicFiles = fs.readdirSync(publicDir).map(file => {
+        const publicFiles = await Promise.all((await fs.promises.readdir(publicDir)).map(async file => {
             const filePath = path.join(publicDir, file);
-            const stats = getFileStats(filePath);
-            const isAccessible = verifyFileAccess(filePath);
+            const stats = await getFileStats(filePath);
+            const isAccessible = await verifyFileAccess(filePath);
             return {
                 name: file,
                 size: stats?.size,
@@ -90,12 +161,12 @@ app.get('/health', (req, res) => {
                 isAccessible,
                 lastChecked: new Date().toISOString()
             };
-        });
+        }));
         
-        const backgroundFiles = fs.readdirSync(path.join(publicDir, 'backgrounds')).map(file => {
+        const backgroundFiles = await Promise.all((await fs.promises.readdir(path.join(publicDir, 'backgrounds'))).map(async file => {
             const filePath = path.join(publicDir, 'backgrounds', file);
-            const stats = getFileStats(filePath);
-            const isAccessible = verifyFileAccess(filePath);
+            const stats = await getFileStats(filePath);
+            const isAccessible = await verifyFileAccess(filePath);
             return {
                 name: file,
                 size: stats?.size,
@@ -103,7 +174,7 @@ app.get('/health', (req, res) => {
                 isAccessible,
                 lastChecked: new Date().toISOString()
             };
-        });
+        }));
         
         res.json({
             status: 'ok',
@@ -150,72 +221,82 @@ app.use((err, req, res, next) => {
 });
 
 // Custom static file middleware with detailed logging and caching
-const staticMiddleware = (req, res, next) => {
+const staticMiddleware = async (req, res, next) => {
     const publicDir = path.join(__dirname, 'public');
     const requestedPath = req.path;
     const fullPath = path.join(publicDir, requestedPath);
     
-    console.log('Static file request:', {
-        requestedPath,
-        fullPath,
-        exists: fs.existsSync(fullPath),
-        isAccessible: verifyFileAccess(fullPath),
-        cacheHit: fileStatsCache.has(fullPath),
-        timestamp: new Date().toISOString()
-    });
+    try {
+        const isAccessible = await verifyFileAccess(fullPath);
+        console.log('Static file request:', {
+            requestedPath,
+            fullPath,
+            exists: fs.existsSync(fullPath),
+            isAccessible,
+            cacheHit: fileStatsCache.has(fullPath),
+            timestamp: new Date().toISOString()
+        });
 
-    // Check if file exists and is accessible
-    if (verifyFileAccess(fullPath)) {
-        // File exists and is accessible, let express.static handle it
-        return express.static(publicDir, {
-            maxAge: '1h',
-            etag: true,
-            lastModified: true
-        })(req, res, next);
+        if (isAccessible) {
+            // File exists and is accessible, let express.static handle it
+            return express.static(publicDir, {
+                maxAge: '1h',
+                etag: true,
+                lastModified: true
+            })(req, res, next);
+        }
+        
+        // File doesn't exist or isn't accessible
+        console.log('File not found or not accessible:', {
+            requestedPath,
+            fullPath,
+            error: 'File not found or not accessible',
+            timestamp: new Date().toISOString()
+        });
+        next();
+    } catch (error) {
+        console.error('Error in static middleware:', error);
+        next(error);
     }
-    
-    // File doesn't exist or isn't accessible
-    console.log('File not found or not accessible:', {
-        requestedPath,
-        fullPath,
-        error: 'File not found or not accessible',
-        timestamp: new Date().toISOString()
-    });
-    next();
 };
 
 app.use(staticMiddleware);
 
 // Handle all other routes by serving index.html
-app.get('*', (req, res, next) => {
+app.get('*', async (req, res, next) => {
     const indexPath = path.join(__dirname, 'public', 'index.html');
-    const isAccessible = verifyFileAccess(indexPath);
-    
-    console.log('Serving index.html for route:', {
-        requestedPath: req.path,
-        indexPath: indexPath,
-        isAccessible,
-        timestamp: new Date().toISOString()
-    });
-    
-    if (!isAccessible) {
-        return res.status(500).send('Error: index.html is not accessible');
-    }
-    
-    res.sendFile(indexPath, {
-        maxAge: '1h',
-        etag: true,
-        lastModified: true
-    }, (err) => {
-        if (err) {
-            console.error('Error serving index.html:', err);
-            next(err);
+    try {
+        const isAccessible = await verifyFileAccess(indexPath);
+        
+        console.log('Serving index.html for route:', {
+            requestedPath: req.path,
+            indexPath: indexPath,
+            isAccessible,
+            timestamp: new Date().toISOString()
+        });
+        
+        if (!isAccessible) {
+            return res.status(500).send('Error: index.html is not accessible');
         }
-    });
+        
+        res.sendFile(indexPath, {
+            maxAge: '1h',
+            etag: true,
+            lastModified: true
+        }, (err) => {
+            if (err) {
+                console.error('Error serving index.html:', err);
+                next(err);
+            }
+        });
+    } catch (error) {
+        console.error('Error serving index.html:', error);
+        next(error);
+    }
 });
 
 // Start the server with error handling
-const server = app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
     console.log(`Server running at http://0.0.0.0:${PORT}`);
     console.log('Current directory:', process.cwd());
     console.log('Server directory:', __dirname);
@@ -226,43 +307,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
         RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR
     });
     
-    // List files in public directory on startup with accessibility check
-    try {
-        const publicFiles = fs.readdirSync(path.join(__dirname, 'public')).map(file => {
-            const filePath = path.join(__dirname, 'public', file);
-            const stats = getFileStats(filePath);
-            const isAccessible = verifyFileAccess(filePath);
-            return {
-                name: file,
-                size: stats?.size,
-                permissions: stats?.mode.toString(8),
-                isDirectory: stats?.isDirectory(),
-                isAccessible,
-                lastChecked: new Date().toISOString()
-            };
-        });
-        
-        const backgroundFiles = fs.readdirSync(path.join(__dirname, 'public', 'backgrounds')).map(file => {
-            const filePath = path.join(__dirname, 'public', 'backgrounds', file);
-            const stats = getFileStats(filePath);
-            const isAccessible = verifyFileAccess(filePath);
-            return {
-                name: file,
-                size: stats?.size,
-                permissions: stats?.mode.toString(8),
-                isAccessible,
-                lastChecked: new Date().toISOString()
-            };
-        });
-        
-        console.log('Available files:', {
-            public: publicFiles,
-            backgrounds: backgroundFiles,
-            timestamp: new Date().toISOString()
-        });
-    } catch (error) {
-        console.error('Error listing files:', error);
-    }
+    // Initial filesystem health check
+    await checkFilesystemHealth();
 });
 
 // Handle graceful shutdown
