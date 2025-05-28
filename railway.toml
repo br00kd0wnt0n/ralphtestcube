@@ -1,12 +1,15 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm install"
+buildCommand = "npm ci"
 
 [deploy]
 startCommand = "node server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 3
 
 [env]
 NODE_ENV = "production"
-PORT = "3002" 
+PORT = "3002"
+NODE_OPTIONS = "--max-old-space-size=512" 
