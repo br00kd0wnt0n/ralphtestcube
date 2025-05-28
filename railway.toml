@@ -5,24 +5,8 @@ buildCommand = "npm install"
 [deploy]
 startCommand = "node server.js"
 healthcheckPath = "/health"
-healthcheckTimeout = 600
-
-[phases.setup]
-nixPkgs = ["nodejs_20"]
-
-[phases.install]
-cmds = ["npm ci --production"]
-
-[phases.start]
-cmds = ["node server.js"]
-
-[phases.healthcheck]
-interval = 60
-timeout = 600
-retries = 5
-startPeriod = 30
+healthcheckTimeout = 30
 
 [env]
 NODE_ENV = "production"
-PORT = "3000"
-NODE_OPTIONS = "--max-old-space-size=512" 
+PORT = "3000" 
