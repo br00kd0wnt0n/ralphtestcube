@@ -10,7 +10,7 @@ healthcheckTimeout = 300
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm ci --production"]
 
 [phases.start]
 cmds = ["npm start"]
@@ -22,4 +22,5 @@ retries = 3
 
 [env]
 NODE_ENV = "production"
-PORT = "3000" 
+PORT = "3000"
+NODE_OPTIONS = "--max-old-space-size=512" 
