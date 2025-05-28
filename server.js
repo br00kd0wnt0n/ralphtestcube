@@ -13,6 +13,8 @@ app.use((req, res, next) => {
     console.log(`[${timestamp}] Headers:`, JSON.stringify(req.headers, null, 2));
     console.log(`[${timestamp}] Environment:`, process.env.NODE_ENV);
     console.log(`[${timestamp}] Working directory:`, process.cwd());
+    console.log(`[${timestamp}] Process user:`, process.getuid ? process.getuid() : 'unknown');
+    console.log(`[${timestamp}] Process group:`, process.getgid ? process.getgid() : 'unknown');
     next();
 });
 
@@ -24,19 +26,64 @@ console.log('- Server directory:', __dirname);
 console.log('- Public directory:', publicDir);
 console.log('- Environment:', process.env.NODE_ENV || 'development');
 console.log('- Port:', PORT);
+console.log('- Process user:', process.getuid ? process.getuid() : 'unknown');
+console.log('- Process group:', process.getgid ? process.getgid() : 'unknown');
 
-// Verify public directory exists
-if (!fs.existsSync(publicDir)) {
-    console.error('ERROR: Public directory does not exist at:', publicDir);
+// Verify public directory exists and is accessible
+try {
+    const stats = fs.statSync(publicDir);
+    console.log('- Public directory stats:', {
+        isDirectory: stats.isDirectory(),
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid,
+        size: stats.size
+    });
+} catch (error) {
+    console.error('ERROR: Could not access public directory:', error);
     process.exit(1);
 }
 
-// List files in public directory
+// List files in public directory with detailed stats
 try {
     const files = fs.readdirSync(publicDir);
-    console.log('- Files in public directory:', files);
+    console.log('- Files in public directory:');
+    files.forEach(file => {
+        try {
+            const filePath = path.join(publicDir, file);
+            const stats = fs.statSync(filePath);
+            console.log(`  ${file}:`, {
+                isDirectory: stats.isDirectory(),
+                mode: stats.mode.toString(8),
+                uid: stats.uid,
+                gid: stats.gid,
+                size: stats.size
+            });
+        } catch (error) {
+            console.error(`  Error getting stats for ${file}:`, error);
+        }
+    });
 } catch (error) {
     console.error('ERROR: Could not read public directory:', error);
+    process.exit(1);
+}
+
+// Verify index.html exists and is readable
+const indexPath = path.join(publicDir, 'index.html');
+try {
+    const stats = fs.statSync(indexPath);
+    console.log('- index.html stats:', {
+        exists: true,
+        mode: stats.mode.toString(8),
+        uid: stats.uid,
+        gid: stats.gid,
+        size: stats.size
+    });
+    // Try to read the file
+    fs.accessSync(indexPath, fs.constants.R_OK);
+    console.log('- index.html is readable');
+} catch (error) {
+    console.error('ERROR: index.html is not accessible:', error);
     process.exit(1);
 }
 
@@ -46,7 +93,7 @@ app.use(express.static(publicDir, {
     etag: true,
     index: false,
     maxAge: '1h',
-    fallthrough: false // This will make express.static throw 404s instead of falling through
+    fallthrough: false
 }));
 
 // Handle favicon requests
@@ -58,12 +105,20 @@ app.get('/favicon.ico', (req, res) => {
 app.get('/', (req, res) => {
     console.log('Healthcheck request received');
     try {
-        const indexPath = path.join(publicDir, 'index.html');
-        console.log('Checking if index.html exists at:', indexPath);
+        console.log('Checking index.html at:', indexPath);
         
-        if (!fs.existsSync(indexPath)) {
-            console.error('ERROR: index.html not found at:', indexPath);
-            return res.status(500).json({ error: 'Server configuration error: index.html not found' });
+        // Verify file exists and is readable
+        try {
+            fs.accessSync(indexPath, fs.constants.R_OK);
+            console.log('index.html exists and is readable');
+        } catch (error) {
+            console.error('Error accessing index.html:', error);
+            return res.status(500).json({ 
+                error: 'Server configuration error', 
+                details: 'index.html is not accessible',
+                path: indexPath,
+                errorMessage: error.message
+            });
         }
 
         // Set security headers
@@ -72,18 +127,36 @@ app.get('/', (req, res) => {
         res.setHeader('X-XSS-Protection', '1; mode=block');
         res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
-        // For healthcheck, just verify we can read the file
+        // Try to read and send the file
         fs.readFile(indexPath, (err, data) => {
             if (err) {
                 console.error('Error reading index.html:', err);
-                return res.status(500).json({ error: 'Error reading index.html' });
+                return res.status(500).json({ 
+                    error: 'Error reading index.html',
+                    details: err.message,
+                    path: indexPath
+                });
             }
             console.log('Successfully read index.html, size:', data.length);
-            res.sendFile(indexPath);
+            res.sendFile(indexPath, (err) => {
+                if (err) {
+                    console.error('Error sending index.html:', err);
+                    return res.status(500).json({ 
+                        error: 'Error sending index.html',
+                        details: err.message,
+                        path: indexPath
+                    });
+                }
+                console.log('Successfully sent index.html');
+            });
         });
     } catch (error) {
         console.error('Error in healthcheck handler:', error);
-        res.status(500).json({ error: 'Internal server error during healthcheck' });
+        res.status(500).json({ 
+            error: 'Internal server error during healthcheck',
+            details: error.message,
+            stack: error.stack
+        });
     }
 });
 
