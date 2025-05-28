@@ -6,18 +6,41 @@ const app = express();
 // Get port from environment variable or use 3000 as fallback
 const PORT = process.env.PORT || 3000;
 
-// Get absolute paths
-const ROOT_DIR = process.cwd();
+// Get absolute paths - handle Railway's root directory configuration
+const ROOT_DIR = process.cwd(); // This will be '.' in Railway
 const SERVER_DIR = __dirname;
-const PUBLIC_DIR = path.resolve(ROOT_DIR, 'public');
-const INDEX_PATH = path.resolve(PUBLIC_DIR, 'index.html');
+const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
+const INDEX_PATH = path.join(PUBLIC_DIR, 'index.html');
 
-// Log absolute paths
-console.log('Absolute paths:');
-console.log('- Root directory:', ROOT_DIR);
-console.log('- Server directory:', SERVER_DIR);
+// Log absolute paths and directory structure
+console.log('Directory structure:');
+console.log('- Root directory (cwd):', ROOT_DIR);
+console.log('- Server directory (__dirname):', SERVER_DIR);
 console.log('- Public directory:', PUBLIC_DIR);
 console.log('- Index file path:', INDEX_PATH);
+
+// List all files in root directory to verify structure
+try {
+    console.log('\nFiles in root directory:');
+    const rootFiles = fs.readdirSync(ROOT_DIR);
+    rootFiles.forEach(file => {
+        try {
+            const filePath = path.join(ROOT_DIR, file);
+            const stats = fs.statSync(filePath);
+            console.log(`  ${file}:`, {
+                isDirectory: stats.isDirectory(),
+                mode: stats.mode.toString(8),
+                size: stats.size,
+                path: filePath
+            });
+        } catch (error) {
+            console.error(`  Error getting stats for ${file}:`, error);
+        }
+    });
+} catch (error) {
+    console.error('ERROR: Could not read root directory:', error);
+    process.exit(1);
+}
 
 // Add detailed logging middleware
 app.use((req, res, next) => {
@@ -32,7 +55,7 @@ app.use((req, res, next) => {
 });
 
 // Log startup information
-console.log('Server startup information:');
+console.log('\nServer startup information:');
 console.log('- Current working directory:', ROOT_DIR);
 console.log('- Server directory:', SERVER_DIR);
 console.log('- Public directory:', PUBLIC_DIR);
@@ -44,7 +67,7 @@ console.log('- Process group:', process.getgid ? process.getgid() : 'unknown');
 // Verify public directory exists and is accessible
 try {
     const stats = fs.statSync(PUBLIC_DIR);
-    console.log('- Public directory stats:', {
+    console.log('\nPublic directory stats:', {
         isDirectory: stats.isDirectory(),
         mode: stats.mode.toString(8),
         uid: stats.uid,
@@ -60,8 +83,8 @@ try {
 
 // List files in public directory with detailed stats
 try {
+    console.log('\nFiles in public directory:');
     const files = fs.readdirSync(PUBLIC_DIR);
-    console.log('- Files in public directory:');
     files.forEach(file => {
         try {
             const filePath = path.join(PUBLIC_DIR, file);
@@ -87,7 +110,7 @@ try {
 // Verify index.html exists and is readable
 try {
     const stats = fs.statSync(INDEX_PATH);
-    console.log('- index.html stats:', {
+    console.log('\nindex.html stats:', {
         exists: true,
         mode: stats.mode.toString(8),
         uid: stats.uid,
@@ -120,7 +143,7 @@ app.get('/favicon.ico', (req, res) => {
 
 // Handle healthcheck explicitly
 app.get('/', (req, res) => {
-    console.log('Healthcheck request received');
+    console.log('\nHealthcheck request received');
     console.log('Checking index.html at:', INDEX_PATH);
     
     try {
@@ -137,7 +160,8 @@ app.get('/', (req, res) => {
                 path: INDEX_PATH,
                 errorMessage: error.message,
                 rootDir: ROOT_DIR,
-                publicDir: PUBLIC_DIR
+                publicDir: PUBLIC_DIR,
+                serverDir: SERVER_DIR
             });
         }
 
@@ -157,7 +181,8 @@ app.get('/', (req, res) => {
                     details: err.message,
                     path: INDEX_PATH,
                     rootDir: ROOT_DIR,
-                    publicDir: PUBLIC_DIR
+                    publicDir: PUBLIC_DIR,
+                    serverDir: SERVER_DIR
                 });
             }
             console.log('Successfully read index.html, size:', data.length);
@@ -170,7 +195,8 @@ app.get('/', (req, res) => {
                         details: err.message,
                         path: INDEX_PATH,
                         rootDir: ROOT_DIR,
-                        publicDir: PUBLIC_DIR
+                        publicDir: PUBLIC_DIR,
+                        serverDir: SERVER_DIR
                     });
                 }
                 console.log('Successfully sent index.html');
@@ -184,7 +210,8 @@ app.get('/', (req, res) => {
             stack: error.stack,
             path: INDEX_PATH,
             rootDir: ROOT_DIR,
-            publicDir: PUBLIC_DIR
+            publicDir: PUBLIC_DIR,
+            serverDir: SERVER_DIR
         });
     }
 });
