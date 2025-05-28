@@ -6,8 +6,6 @@ buildCommand = "npm install"
 startCommand = "node server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 600
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 5
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
@@ -16,7 +14,7 @@ nixPkgs = ["nodejs_20"]
 cmds = ["npm ci --production"]
 
 [phases.start]
-cmds = ["npm start"]
+cmds = ["node server.js"]
 
 [phases.healthcheck]
 interval = 60
