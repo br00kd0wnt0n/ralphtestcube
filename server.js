@@ -9,10 +9,17 @@ const PORT = process.env.PORT || 3002;
 // Cache for file stats to reduce filesystem operations
 const fileStatsCache = new Map();
 const CACHE_TTL = 30000; // 30 second cache TTL
-const FILESYSTEM_CHECK_INTERVAL = 15000; // Check filesystem every 15 seconds
+const FILESYSTEM_CHECK_INTERVAL = 5000; // Check filesystem every 5 seconds
+const MAX_RETRIES = 5; // Maximum number of retries for file operations
+const RETRY_DELAY = 1000; // Delay between retries in milliseconds
+
+// Track filesystem state
+let lastFilesystemState = new Map();
+let filesystemErrorCount = 0;
+const MAX_FILESYSTEM_ERRORS = 3;
 
 // Function to get file stats with caching and retry
-async function getFileStats(filePath, retries = 3) {
+async function getFileStats(filePath, retries = MAX_RETRIES) {
     const now = Date.now();
     const cached = fileStatsCache.get(filePath);
     
@@ -25,104 +32,190 @@ async function getFileStats(filePath, retries = 3) {
             const stats = await fs.promises.stat(filePath);
             fileStatsCache.set(filePath, {
                 stats,
-                timestamp: now
+                timestamp: now,
+                lastCheck: new Date().toISOString()
             });
             return stats;
         } catch (error) {
             console.error(`Error getting file stats (attempt ${i + 1}/${retries}):`, {
                 filePath,
-                error: error.message
+                error: error.message,
+                timestamp: new Date().toISOString()
             });
-            if (i === retries - 1) throw error;
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between retries
+            if (i === retries - 1) {
+                filesystemErrorCount++;
+                throw error;
+            }
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
         }
     }
     return null;
 }
 
-// Function to verify file accessibility with retry
-async function verifyFileAccess(filePath, retries = 3) {
+// Function to verify file accessibility with retry and state tracking
+async function verifyFileAccess(filePath, retries = MAX_RETRIES) {
+    const currentState = {
+        path: filePath,
+        timestamp: new Date().toISOString(),
+        attempts: 0,
+        lastError: null
+    };
+
     for (let i = 0; i < retries; i++) {
+        currentState.attempts++;
         try {
             const stats = await getFileStats(filePath);
-            if (!stats) return false;
+            if (!stats) {
+                currentState.lastError = 'No stats available';
+                continue;
+            }
             
             // Check if file is readable
             await fs.promises.access(filePath, fs.constants.R_OK);
+            
+            // Update state tracking
+            lastFilesystemState.set(filePath, {
+                ...currentState,
+                isAccessible: true,
+                lastSuccess: new Date().toISOString()
+            });
+            
             return true;
         } catch (error) {
+            currentState.lastError = error.message;
             console.error(`File access error (attempt ${i + 1}/${retries}):`, {
-                filePath,
+                ...currentState,
                 error: error.message
             });
-            if (i === retries - 1) return false;
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second between retries
+            
+            if (i === retries - 1) {
+                lastFilesystemState.set(filePath, {
+                    ...currentState,
+                    isAccessible: false,
+                    lastError: error.message
+                });
+                return false;
+            }
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
         }
     }
     return false;
 }
 
-// Function to check filesystem health
+// Function to check filesystem health with state tracking
 async function checkFilesystemHealth() {
     const publicDir = path.join(__dirname, 'public');
     const backgroundsDir = path.join(publicDir, 'backgrounds');
+    const healthState = {
+        timestamp: new Date().toISOString(),
+        directories: {},
+        files: {},
+        errors: [],
+        recoveryAttempted: false
+    };
     
     try {
-        console.log('Checking filesystem health...');
+        console.log('Checking filesystem health...', {
+            timestamp: healthState.timestamp,
+            errorCount: filesystemErrorCount
+        });
         
         // Check public directory
         const publicStats = await getFileStats(publicDir);
+        healthState.directories.public = {
+            path: publicDir,
+            exists: !!publicStats,
+            isDirectory: publicStats?.isDirectory(),
+            permissions: publicStats?.mode.toString(8),
+            lastCheck: new Date().toISOString()
+        };
+        
         if (!publicStats || !publicStats.isDirectory()) {
-            console.error('Public directory is not accessible');
+            healthState.errors.push('Public directory is not accessible');
             return false;
         }
         
         // Check backgrounds directory
         const backgroundsStats = await getFileStats(backgroundsDir);
+        healthState.directories.backgrounds = {
+            path: backgroundsDir,
+            exists: !!backgroundsStats,
+            isDirectory: backgroundsStats?.isDirectory(),
+            permissions: backgroundsStats?.mode.toString(8),
+            lastCheck: new Date().toISOString()
+        };
+        
         if (!backgroundsStats || !backgroundsStats.isDirectory()) {
-            console.error('Backgrounds directory is not accessible');
+            healthState.errors.push('Backgrounds directory is not accessible');
             return false;
         }
         
-        // Check all files
+        // Check all files with state tracking
         const files = await fs.promises.readdir(publicDir);
         for (const file of files) {
             const filePath = path.join(publicDir, file);
             const isAccessible = await verifyFileAccess(filePath);
-            console.log(`File ${file} accessibility:`, {
+            const stats = await getFileStats(filePath);
+            
+            healthState.files[file] = {
                 path: filePath,
                 isAccessible,
-                timestamp: new Date().toISOString()
-            });
+                size: stats?.size,
+                permissions: stats?.mode.toString(8),
+                lastCheck: new Date().toISOString(),
+                state: lastFilesystemState.get(filePath)
+            };
+            
+            console.log(`File ${file} accessibility:`, healthState.files[file]);
         }
         
-        // Check background images
-        const backgroundFiles = await fs.promises.readdir(backgroundsDir);
-        for (const file of backgroundFiles) {
-            const filePath = path.join(backgroundsDir, file);
-            const isAccessible = await verifyFileAccess(filePath);
-            console.log(`Background file ${file} accessibility:`, {
-                path: filePath,
-                isAccessible,
+        // Check for filesystem recovery
+        if (filesystemErrorCount > 0) {
+            console.log('Attempting filesystem recovery...', {
+                errorCount: filesystemErrorCount,
                 timestamp: new Date().toISOString()
             });
+            
+            // Clear cache and retry all files
+            fileStatsCache.clear();
+            for (const [filePath, state] of lastFilesystemState) {
+                if (!state.isAccessible) {
+                    await verifyFileAccess(filePath, MAX_RETRIES);
+                }
+            }
+            
+            healthState.recoveryAttempted = true;
+            filesystemErrorCount = 0;
         }
         
         return true;
     } catch (error) {
-        console.error('Filesystem health check failed:', error);
+        console.error('Filesystem health check failed:', {
+            error: error.message,
+            healthState,
+            timestamp: new Date().toISOString()
+        });
         return false;
     }
 }
 
-// Start periodic filesystem health checks
+// Start periodic filesystem health checks with exponential backoff
+let checkInterval = FILESYSTEM_CHECK_INTERVAL;
 setInterval(async () => {
     const isHealthy = await checkFilesystemHealth();
     if (!isHealthy) {
-        console.error('Filesystem health check failed, clearing cache');
+        console.error('Filesystem health check failed, clearing cache and increasing check frequency', {
+            timestamp: new Date().toISOString(),
+            currentInterval: checkInterval
+        });
         fileStatsCache.clear();
+        // Increase check frequency on failure
+        checkInterval = Math.min(checkInterval * 1.5, 15000);
+    } else {
+        // Reset check frequency on success
+        checkInterval = FILESYSTEM_CHECK_INTERVAL;
     }
-}, FILESYSTEM_CHECK_INTERVAL);
+}, checkInterval);
 
 // Basic request logging with more details
 app.use((req, res, next) => {
@@ -220,7 +313,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Custom static file middleware with detailed logging and caching
+// Enhanced static file middleware with state tracking
 const staticMiddleware = async (req, res, next) => {
     const publicDir = path.join(__dirname, 'public');
     const requestedPath = req.path;
@@ -228,11 +321,14 @@ const staticMiddleware = async (req, res, next) => {
     
     try {
         const isAccessible = await verifyFileAccess(fullPath);
+        const state = lastFilesystemState.get(fullPath);
+        
         console.log('Static file request:', {
             requestedPath,
             fullPath,
             exists: fs.existsSync(fullPath),
             isAccessible,
+            state,
             cacheHit: fileStatsCache.has(fullPath),
             timestamp: new Date().toISOString()
         });
@@ -242,7 +338,12 @@ const staticMiddleware = async (req, res, next) => {
             return express.static(publicDir, {
                 maxAge: '1h',
                 etag: true,
-                lastModified: true
+                lastModified: true,
+                setHeaders: (res, path) => {
+                    // Add custom headers for monitoring
+                    res.set('X-File-State', JSON.stringify(lastFilesystemState.get(path) || {}));
+                    res.set('X-Filesystem-Health', filesystemErrorCount === 0 ? 'healthy' : 'degraded');
+                }
             })(req, res, next);
         }
         
@@ -250,12 +351,19 @@ const staticMiddleware = async (req, res, next) => {
         console.log('File not found or not accessible:', {
             requestedPath,
             fullPath,
+            state,
             error: 'File not found or not accessible',
             timestamp: new Date().toISOString()
         });
         next();
     } catch (error) {
-        console.error('Error in static middleware:', error);
+        console.error('Error in static middleware:', {
+            error: error.message,
+            requestedPath,
+            fullPath,
+            state: lastFilesystemState.get(fullPath),
+            timestamp: new Date().toISOString()
+        });
         next(error);
     }
 };
