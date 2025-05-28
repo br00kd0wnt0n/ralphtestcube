@@ -4,7 +4,9 @@ builder = "nixpacks"
 [deploy]
 startCommand = "npm start"
 healthcheckPath = "/"
-healthcheckTimeout = 100
+healthcheckTimeout = 300
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 10
 
 [phases.setup]
 nixPkgs = ["nodejs"]
@@ -13,4 +15,9 @@ nixPkgs = ["nodejs"]
 cmds = ["npm install"]
 
 [phases.start]
-cmds = ["npm start"] 
+cmds = ["npm start"]
+
+[phases.healthcheck]
+interval = "30s"
+timeout = "10s"
+retries = 3 
