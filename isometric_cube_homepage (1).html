@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Cube Navigation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .background-fade {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            background-size: 110% 110%; /* Reduced from 120% for more subtle movement */
+            background-position: center center;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            cursor: grab;
+            background: white;
+            transition: background-color 0.8s ease-in-out;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        body:active {
+            cursor: grabbing;
+        }
+
+        .container {
+            position: relative;
+        }
+
+        .cube-container {
+            perspective: 1000px;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            filter: drop-shadow(0 22px 33px rgba(0, 0, 0, 0.20));
+        }
+
+        .cube {
+            width: 200px;
+            height: 200px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.3s ease-out;
+            cursor: pointer;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.13);
+        }
+
+        .face {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(5px);
+            cursor: pointer;
+            transition: background 0.8s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease;
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.07);
+        }
+
+        .face:hover {
+            border-color: rgba(0, 0, 0, 0.3);
+        }
+
+        .front { 
+            background: linear-gradient(135deg, #888 0%, #666 100%);
+            transform: rotateY(0deg) translateZ(100px); 
+        }
+        .back { 
+            background: linear-gradient(135deg, #888 0%, #666 100%);
+            transform: rotateY(180deg) translateZ(100px); 
+        }
+        .right { 
+            background: linear-gradient(135deg, #888 0%, #666 100%);
+            transform: rotateY(90deg) translateZ(100px); 
+        }
+        .left { 
+            background: linear-gradient(135deg, #888 0%, #666 100%);
+            transform: rotateY(-90deg) translateZ(100px); 
+        }
+        .top { 
+            background: linear-gradient(135deg, #aaa 0%, #888 100%);
+            transform: rotateX(90deg) translateZ(100px); 
+        }
+        .bottom { 
+            background: linear-gradient(135deg, #666 0%, #444 100%);
+            transform: rotateX(-90deg) translateZ(100px); 
+        }
+
+        .instructions {
+            position: absolute;
+            top: 30px;
+            right: 50px;
+            color: #333;
+            font-size: 16px;
+            text-align: right;
+            opacity: 0.7;
+            z-index: 100;
+        }
+
+        .ralph-logo {
+            position: absolute;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            height: 150px;
+            z-index: 101;
+        }
+
+        .navigation-panel {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 25px 50px;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            z-index: 102;
+        }
+
+        .current-section {
+            color: white;
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .section-description {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 16px;
+            font-weight: 400;
+        }
+
+        .transition-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease-in-out;
+            backdrop-filter: blur(10px);
+        }
+
+        .transition-text {
+            color: white;
+            font-size: 32px;
+            font-weight: 600;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.5s ease-in-out;
+        }
+
+        .transition-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .transition-overlay.active .transition-text {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @media (max-width: 768px) {
+            .cube {
+                width: 150px;
+                height: 150px;
+            }
+
+            .face {
+                width: 150px;
+                height: 150px;
+            }
+
+            .front, .back { transform: rotateY(0deg) translateZ(75px); }
+            .back { transform: rotateY(180deg) translateZ(75px); }
+            .right { transform: rotateY(90deg) translateZ(75px); }
+            .left { transform: rotateY(-90deg) translateZ(75px); }
+            .top { transform: rotateX(90deg) translateZ(75px); }
+            .bottom { transform: rotateX(-90deg) translateZ(75px); }
+
+            .navigation-panel {
+                bottom: 30px;
+                padding: 20px 30px;
+            }
+
+            .current-section {
+                font-size: 22px;
+                margin-bottom: 8px;
+            }
+
+            .section-description {
+                font-size: 14px;
+            }
+
+            .instructions {
+                top: 30px;
+                right: 30px;
+                font-size: 14px;
+            }
+
+            .transition-text {
+                font-size: 24px;
+                padding: 0 20px;
+            }
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="background-fade" id="backgroundFade1" style="opacity:1;"></div>
+    <div class="background-fade" id="backgroundFade2" style="opacity:0;"></div>
+    <div class="instructions">
+        Drag to rotate<br>
+        Click face to explore
+    </div>
+    <img src="ralph-logo-pink.png" alt="Ralph Logo" class="ralph-logo" />
+    <div class="container">
+        <div class="cube-container">
+            <div class="cube" id="cube">
+                <div class="face front" data-face="magazine"></div>
+                <div class="face back" data-face="events"></div>
+                <div class="face right" data-face="shop"></div>
+                <div class="face left" data-face="friends"></div>
+                <div class="face top" data-face="creative"></div>
+                <div class="face bottom" data-face="magazine"></div>
+            </div>
+        </div>
+    </div>
+    <div class="navigation-panel">
+        <div class="current-section" id="currentSection">MAGAZINE</div>
+        <div class="section-description" id="sectionDescription">Latest stories and insights</div>
+    </div>
+    <div class="transition-overlay">
+        <div class="transition-text">BOX UNFOLDS, TRANSITION TO SECTION</div>
+    </div>
+
+    <script>
+        class CubeNavigator {
+            constructor() {
+                this.cube = document.getElementById('cube');
+                this.body = document.body;
+                this.isDragging = false;
+                this.previousMousePosition = { x: 0, y: 0 };
+                this.rotation = { x: -15, y: 0 };
+                this.currentFace = 'magazine';
+                this.backgrounds = {
+                    magazine: 'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_26c2e7b2-cc45-43dc-aaf2-e7473dbc869c_0.png',
+                    events:   'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_26c2e7b2-cc45-43dc-aaf2-e7473dbc869c_1.png',
+                    shop:     'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_0.png',
+                    friends:  'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_1.png',
+                    creative: 'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_2.png',
+                    bottom:   'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_3.png',
+                };
+                this.overlayColors = {
+                    magazine: 'rgba(102,126,234,0.7)',
+                    events:   'rgba(240,147,251,0.7)',
+                    shop:     'rgba(79,172,254,0.7)',
+                    friends:  'rgba(67,233,123,0.7)',
+                    creative: 'rgba(250,112,154,0.7)',
+                    bottom:   'rgba(90,114,233,0.7)',
+                };
+                this.bgFadeEls = [
+                    document.getElementById('backgroundFade1'),
+                    document.getElementById('backgroundFade2')
+                ];
+                this.activeBg = 0;
+                
+                this.faces = {
+                    magazine: { 
+                        rotation: { x: -15, y: 0 }, 
+                        color: '#667eea',
+                        title: 'MAGAZINE',
+                        description: 'Latest stories and insights',
+                        backgroundColor: '#d5d9ff'
+                    },
+                    events: { 
+                        rotation: { x: -15, y: 180 }, 
+                        color: '#f093fb',
+                        title: 'EVENTS',
+                        description: 'Upcoming experiences and gatherings',
+                        backgroundColor: '#fad5fa'
+                    },
+                    shop: { 
+                        rotation: { x: -15, y: 90 }, 
+                        color: '#4facfe',
+                        title: 'SHOP',
+                        description: 'Curated products and collections',
+                        backgroundColor: '#ccf0ff'
+                    },
+                    friends: { 
+                        rotation: { x: -15, y: -90 }, 
+                        color: '#43e97b',
+                        title: 'FRIENDS',
+                        description: 'Community and connections',
+                        backgroundColor: '#ccfad5'
+                    },
+                    creative: { 
+                        rotation: { x: 75, y: 0 }, 
+                        color: '#fa709a',
+                        title: 'CREATIVE',
+                        description: 'Artistic projects and inspiration',
+                        backgroundColor: '#ffebcc'
+                    }
+                };
+
+                this.transitionOverlay = document.querySelector('.transition-overlay');
+                this.transitionText = document.querySelector('.transition-text');
+                this.isTransitioning = false;
+                
+                this.init();
+            }
+
+            init() {
+                this.updateCubeTransform();
+                this.updateCubeFaceColors();
+                this.updateNavigation();
+                this.updateBackground();
+                this.bindEvents();
+            }
+
+            bindEvents() {
+                // Mouse events
+                this.body.addEventListener('mousedown', this.startDrag.bind(this));
+                this.body.addEventListener('mousemove', this.drag.bind(this));
+                this.body.addEventListener('mouseup', this.endDrag.bind(this));
+
+                // Touch events
+                this.body.addEventListener('touchstart', this.startDrag.bind(this));
+                this.body.addEventListener('touchmove', this.drag.bind(this));
+                this.body.addEventListener('touchend', this.endDrag.bind(this));
+
+                // Face clicks
+                document.querySelectorAll('.face').forEach(face => {
+                    face.addEventListener('click', (e) => {
+                        if (!this.isDragging) {
+                            this.navigateToPage(e.target.dataset.face);
+                        }
+                    });
+                });
+
+                // Navigation panel clicks
+                document.querySelector('.navigation-panel').addEventListener('click', () => {
+                    this.navigateToPage(this.currentFace);
+                });
+
+                // Double click event
+                this.cube.addEventListener('dblclick', (e) => {
+                    if (!this.isDragging && !this.isTransitioning) {
+                        this.showTransitionOverlay();
+                    }
+                });
+
+                // Click on overlay to hide it
+                this.transitionOverlay.addEventListener('click', () => {
+                    this.hideTransitionOverlay();
+                });
+            }
+
+            startDrag(e) {
+                this.isDragging = true;
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                this.previousMousePosition = { x: clientX, y: clientY };
+                this.body.style.cursor = 'grabbing';
+                e.preventDefault();
+            }
+
+            drag(e) {
+                if (!this.isDragging) return;
+
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+                const deltaMove = {
+                    x: clientX - this.previousMousePosition.x,
+                    y: clientY - this.previousMousePosition.y
+                };
+
+                this.rotation.y += deltaMove.x * 0.5;
+                this.rotation.x -= deltaMove.y * 0.5;
+
+                // Constrain X rotation
+                this.rotation.x = Math.max(-90, Math.min(90, this.rotation.x));
+
+                this.updateCubeTransform();
+                this.detectClosestFace();
+
+                this.previousMousePosition = { x: clientX, y: clientY };
+                e.preventDefault();
+            }
+
+            endDrag() {
+                this.isDragging = false;
+                this.body.style.cursor = 'grab';
+            }
+
+            updateCubeTransform() {
+                this.cube.style.transform = `rotateX(${this.rotation.x}deg) rotateY(${this.rotation.y}deg)`;
+                
+                // Calculate normalized rotation values (-1 to 1 range)
+                const normalizedX = Math.sin(this.rotation.x * (Math.PI / 180));
+                const normalizedY = Math.sin(this.rotation.y * (Math.PI / 180));
+                
+                // More subtle parallax background effect
+                const maxOffset = 60; // Reduced from 100 for more subtle movement
+                
+                // Calculate offsets with perspective effect
+                const xOffset = normalizedY * maxOffset;
+                const yOffset = normalizedX * maxOffset;
+                
+                // Add subtle perspective-based movement
+                const perspectiveX = Math.cos(this.rotation.y * (Math.PI / 180)) * 15; // Reduced from 30
+                const perspectiveY = Math.cos(this.rotation.x * (Math.PI / 180)) * 15; // Reduced from 30
+                
+                // Combine direct movement with perspective movement
+                const finalXOffset = xOffset + perspectiveX;
+                const finalYOffset = yOffset + perspectiveY;
+                
+                // Calculate percentages with reduced range
+                const imageXPercent = 50 + (finalXOffset / maxOffset) * 20; // Reduced from 40
+                const imageYPercent = 50 + (finalYOffset / maxOffset) * 20; // Reduced from 40
+                const overlayXPercent = 50 + (finalXOffset / maxOffset) * 10; // Reduced from 20
+                const overlayYPercent = 50 + (finalYOffset / maxOffset) * 10; // Reduced from 20
+                
+                // Get current face's overlay and image
+                const faceKey = this.currentFace === 'magazine' || this.currentFace === 'bottom' ? this.currentFace : this.currentFace;
+                const img = this.backgrounds[faceKey] || this.backgrounds['magazine'];
+                const overlay = this.overlayColors[faceKey] || 'rgba(0,0,0,0.5)';
+                
+                // Apply separate positioning for overlay and image with smooth transitions
+                this.bgFadeEls[this.activeBg].style.transition = 'background-position 0.15s ease-out'; // Slightly slower transition
+                this.bgFadeEls[this.activeBg].style.background = `linear-gradient(${overlay},${overlay}), url('${img}')`;
+                this.bgFadeEls[this.activeBg].style.backgroundPosition = `${overlayXPercent}% ${overlayYPercent}%, ${imageXPercent}% ${imageYPercent}%`;
+                this.bgFadeEls[this.activeBg].style.backgroundSize = '110% 110%, 110% 110%'; // Reduced from 120%
+                this.bgFadeEls[this.activeBg].style.backgroundRepeat = 'no-repeat';
+                this.bgFadeEls[this.activeBg].style.transform = 'scale(1.1)'; // Reduced from 1.2
+            }
+
+            detectClosestFace() {
+                // Normalize rotation values
+                let normalizedY = ((this.rotation.y % 360) + 360) % 360;
+                let normalizedX = this.rotation.x;
+                
+                let closestFace = 'magazine';
+                
+                // Determine face based on rotation
+                if (normalizedX > 45) {
+                    closestFace = 'creative'; // top face
+                } else if (normalizedX < -45) {
+                    closestFace = 'magazine'; // when looking down, default to magazine
+                } else {
+                    // Side faces based on Y rotation
+                    if (normalizedY >= 315 || normalizedY < 45) {
+                        closestFace = 'magazine'; // front (0 degrees)
+                    } else if (normalizedY >= 45 && normalizedY < 135) {
+                        closestFace = 'shop'; // right (90 degrees)
+                    } else if (normalizedY >= 135 && normalizedY < 225) {
+                        closestFace = 'events'; // back (180 degrees)
+                    } else if (normalizedY >= 225 && normalizedY < 315) {
+                        closestFace = 'friends'; // left (270 degrees)
+                    }
+                }
+
+                if (closestFace !== this.currentFace) {
+                    this.currentFace = closestFace;
+                    this.updateNavigation();
+                    this.updateCubeFaceColors();
+                    this.updateBackground();
+                }
+            }
+
+            rotateTo(face) {
+                if (this.faces[face]) {
+                    this.rotation = { ...this.faces[face].rotation };
+                    this.currentFace = face;
+                    this.cube.style.transition = 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+                    this.updateCubeTransform();
+                    this.updateNavigation();
+                    this.updateCubeFaceColors();
+                    this.updateBackground();
+                    
+                    setTimeout(() => {
+                        this.cube.style.transition = 'transform 0.3s ease-out';
+                    }, 800);
+                }
+            }
+
+            updateBackground() {
+                // Cross-fade backgrounds
+                const nextBg = 1 - this.activeBg;
+                const faceKey = this.currentFace === 'magazine' || this.currentFace === 'bottom' ? this.currentFace : this.currentFace;
+                const img = this.backgrounds[faceKey] || this.backgrounds['magazine'];
+                const overlay = this.overlayColors[faceKey] || 'rgba(0,0,0,0.5)';
+                this.bgFadeEls[nextBg].style.background = `linear-gradient(${overlay},${overlay}), url('${img}')`;
+                this.bgFadeEls[nextBg].style.backgroundPosition = '50% 50%, 50% 50%';
+                this.bgFadeEls[nextBg].style.backgroundSize = 'cover, cover';
+                this.bgFadeEls[nextBg].style.transition = 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+                this.bgFadeEls[this.activeBg].style.transition = 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+                this.bgFadeEls[nextBg].style.opacity = 1;
+                this.bgFadeEls[this.activeBg].style.opacity = 0;
+                this.activeBg = nextBg;
+            }
+
+            updateNavigation() {
+                const currentSection = document.getElementById('currentSection');
+                const sectionDescription = document.getElementById('sectionDescription');
+                
+                if (this.faces[this.currentFace]) {
+                    currentSection.textContent = this.faces[this.currentFace].title;
+                    sectionDescription.textContent = this.faces[this.currentFace].description;
+                }
+            }
+
+            updateCubeFaceColors() {
+                const faces = document.querySelectorAll('.face');
+                
+                // Define the color scheme for each section
+                const colorSchemes = {
+                    magazine: {
+                        side: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        top: 'linear-gradient(135deg, #7b8ceb 0%, #8157a3 100%)',
+                        bottom: 'linear-gradient(135deg, #5a72e9 0%, #6b44a1 100%)'
+                    },
+                    events: {
+                        side: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                        top: 'linear-gradient(135deg, #f1a1fc 0%, #f6657d 100%)',
+                        bottom: 'linear-gradient(135deg, #ef85fa 0%, #f4495b 100%)'
+                    },
+                    shop: {
+                        side: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                        top: 'linear-gradient(135deg, #5fb4fe 0%, #10f4fe 100%)',
+                        bottom: 'linear-gradient(135deg, #3fa4fe 0%, #00f0fe 100%)'
+                    },
+                    friends: {
+                        side: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                        top: 'linear-gradient(135deg, #53eb8b 0%, #48fad7 100%)',
+                        bottom: 'linear-gradient(135deg, #33e76b 0%, #28f8d7 100%)'
+                    },
+                    creative: {
+                        side: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                        top: 'linear-gradient(135deg, #fb80aa 0%, #fee250 100%)',
+                        bottom: 'linear-gradient(135deg, #f9608a 0%, #fed030 100%)'
+                    }
+                };
+
+                const currentScheme = colorSchemes[this.currentFace];
+                
+                faces.forEach((face) => {
+                    const faceClass = face.classList[1]; // front, back, right, left, top, bottom
+                    
+                    // Always apply colors - never neutral gray
+                    if (currentScheme) {
+                        if (faceClass === 'front' || faceClass === 'back' || faceClass === 'right' || faceClass === 'left') {
+                            face.style.background = currentScheme.side;
+                        } else if (faceClass === 'top') {
+                            face.style.background = currentScheme.top;
+                        } else if (faceClass === 'bottom') {
+                            face.style.background = currentScheme.bottom;
+                        }
+                    }
+                });
+            }
+
+            navigateToPage(page) {
+                // Navigation disabled for now
+            }
+
+            showTransitionOverlay() {
+                this.isTransitioning = true;
+                this.transitionOverlay.classList.add('active');
+                
+                // Hide overlay after 2 seconds
+                setTimeout(() => {
+                    this.hideTransitionOverlay();
+                }, 2000);
+            }
+
+            hideTransitionOverlay() {
+                this.transitionOverlay.classList.remove('active');
+                setTimeout(() => {
+                    this.isTransitioning = false;
+                }, 500); // Match transition duration
+            }
+        }
+
+        // Initialize the cube navigator when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new CubeNavigator();
+        });
+    </script>
+</body>
+</html>
