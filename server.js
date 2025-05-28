@@ -12,11 +12,77 @@ const CACHE_TTL = 30000; // 30 second cache TTL
 const FILESYSTEM_CHECK_INTERVAL = 5000; // Check filesystem every 5 seconds
 const MAX_RETRIES = 5; // Maximum number of retries for file operations
 const RETRY_DELAY = 1000; // Delay between retries in milliseconds
+const CONTAINER_RESTART_THRESHOLD = 3; // Number of filesystem errors before considering container restart
 
 // Track filesystem state
 let lastFilesystemState = new Map();
 let filesystemErrorCount = 0;
-const MAX_FILESYSTEM_ERRORS = 3;
+let lastContainerState = {
+    timestamp: new Date().toISOString(),
+    filesystemMounts: new Set(),
+    fileCount: 0,
+    errorCount: 0,
+    restartCount: 0
+};
+
+// Function to check container filesystem state
+async function checkContainerState() {
+    const currentState = {
+        timestamp: new Date().toISOString(),
+        filesystemMounts: new Set(),
+        fileCount: 0,
+        errorCount: filesystemErrorCount,
+        restartCount: lastContainerState.restartCount
+    };
+
+    try {
+        // Check if we're in a container
+        const isContainer = process.env.RAILWAY_WORKSPACE_DIR !== undefined;
+        currentState.isContainer = isContainer;
+
+        // Get filesystem mounts
+        if (isContainer) {
+            try {
+                const mounts = await fs.promises.readFile('/proc/mounts', 'utf8');
+                currentState.filesystemMounts = new Set(mounts.split('\n').map(line => line.split(' ')[1]));
+            } catch (error) {
+                console.error('Error reading container mounts:', error);
+            }
+        }
+
+        // Check if filesystem mounts have changed
+        const mountsChanged = !isEqualSets(currentState.filesystemMounts, lastContainerState.filesystemMounts);
+        if (mountsChanged) {
+            console.log('Container filesystem mounts changed:', {
+                old: Array.from(lastContainerState.filesystemMounts),
+                new: Array.from(currentState.filesystemMounts),
+                timestamp: currentState.timestamp
+            });
+        }
+
+        // Update container state
+        lastContainerState = currentState;
+
+        return {
+            isHealthy: !mountsChanged && filesystemErrorCount < CONTAINER_RESTART_THRESHOLD,
+            state: currentState
+        };
+    } catch (error) {
+        console.error('Error checking container state:', error);
+        return {
+            isHealthy: false,
+            state: currentState,
+            error: error.message
+        };
+    }
+}
+
+// Helper function to compare Sets
+function isEqualSets(a, b) {
+    if (a.size !== b.size) return false;
+    for (const item of a) if (!b.has(item)) return false;
+    return true;
+}
 
 // Function to get file stats with caching and retry
 async function getFileStats(filePath, retries = MAX_RETRIES) {
@@ -30,22 +96,47 @@ async function getFileStats(filePath, retries = MAX_RETRIES) {
     for (let i = 0; i < retries; i++) {
         try {
             const stats = await fs.promises.stat(filePath);
+            const containerState = await checkContainerState();
+            
             fileStatsCache.set(filePath, {
                 stats,
                 timestamp: now,
-                lastCheck: new Date().toISOString()
+                lastCheck: new Date().toISOString(),
+                containerState: containerState.state
             });
+            
+            if (!containerState.isHealthy) {
+                console.warn('Container state unhealthy during file stats:', {
+                    filePath,
+                    containerState: containerState.state,
+                    timestamp: new Date().toISOString()
+                });
+            }
+            
             return stats;
         } catch (error) {
             console.error(`Error getting file stats (attempt ${i + 1}/${retries}):`, {
                 filePath,
                 error: error.message,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                containerState: lastContainerState
             });
+            
             if (i === retries - 1) {
                 filesystemErrorCount++;
                 throw error;
             }
+            
+            // Check container state before retrying
+            const containerState = await checkContainerState();
+            if (!containerState.isHealthy) {
+                console.error('Container state unhealthy, clearing cache:', {
+                    containerState: containerState.state,
+                    timestamp: new Date().toISOString()
+                });
+                fileStatsCache.clear();
+            }
+            
             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
         }
     }
@@ -102,7 +193,7 @@ async function verifyFileAccess(filePath, retries = MAX_RETRIES) {
     return false;
 }
 
-// Function to check filesystem health with state tracking
+// Function to check filesystem health with container awareness
 async function checkFilesystemHealth() {
     const publicDir = path.join(__dirname, 'public');
     const backgroundsDir = path.join(publicDir, 'backgrounds');
@@ -111,14 +202,40 @@ async function checkFilesystemHealth() {
         directories: {},
         files: {},
         errors: [],
-        recoveryAttempted: false
+        recoveryAttempted: false,
+        containerState: null
     };
     
     try {
+        // Check container state first
+        const containerState = await checkContainerState();
+        healthState.containerState = containerState.state;
+        
         console.log('Checking filesystem health...', {
             timestamp: healthState.timestamp,
-            errorCount: filesystemErrorCount
+            errorCount: filesystemErrorCount,
+            containerState: containerState.state
         });
+        
+        if (!containerState.isHealthy) {
+            healthState.errors.push('Container state unhealthy');
+            console.error('Container state unhealthy:', {
+                containerState: containerState.state,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Consider container restart if too many errors
+            if (filesystemErrorCount >= CONTAINER_RESTART_THRESHOLD) {
+                console.error('Too many filesystem errors, container may need restart:', {
+                    errorCount: filesystemErrorCount,
+                    threshold: CONTAINER_RESTART_THRESHOLD,
+                    timestamp: new Date().toISOString()
+                });
+                lastContainerState.restartCount++;
+            }
+            
+            return false;
+        }
         
         // Check public directory
         const publicStats = await getFileStats(publicDir);
@@ -193,24 +310,33 @@ async function checkFilesystemHealth() {
         console.error('Filesystem health check failed:', {
             error: error.message,
             healthState,
+            containerState: lastContainerState,
             timestamp: new Date().toISOString()
         });
         return false;
     }
 }
 
-// Start periodic filesystem health checks with exponential backoff
+// Start periodic filesystem health checks with container awareness
 let checkInterval = FILESYSTEM_CHECK_INTERVAL;
 setInterval(async () => {
     const isHealthy = await checkFilesystemHealth();
     if (!isHealthy) {
-        console.error('Filesystem health check failed, clearing cache and increasing check frequency', {
+        console.error('Filesystem health check failed:', {
             timestamp: new Date().toISOString(),
-            currentInterval: checkInterval
+            currentInterval: checkInterval,
+            containerState: lastContainerState
         });
+        
         fileStatsCache.clear();
         // Increase check frequency on failure
         checkInterval = Math.min(checkInterval * 1.5, 15000);
+        
+        // Log container state for debugging
+        console.log('Container state after health check failure:', {
+            containerState: lastContainerState,
+            timestamp: new Date().toISOString()
+        });
     } else {
         // Reset check frequency on success
         checkInterval = FILESYSTEM_CHECK_INTERVAL;
