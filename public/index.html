@@ -63,6 +63,37 @@
             box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.13);
         }
 
+        /* Modify static overlay to preserve 3D */
+        .static-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.1s ease-out;
+            mix-blend-mode: overlay;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            background-size: 100px 100px; /* Smaller size for more intense noise */
+            z-index: 10;
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+            will-change: opacity, filter; /* Optimize for animations */
+            transform: translateZ(0); /* Force GPU acceleration */
+        }
+
+        .static-overlay.active {
+            opacity: 0.35;
+            animation: staticFlicker 0.08s infinite; /* Slightly slower for better performance */
+        }
+
+        @keyframes staticFlicker {
+            0% { opacity: 0.35; filter: hue-rotate(0deg) saturate(1.4) contrast(1.2); }
+            50% { opacity: 0.32; filter: hue-rotate(10deg) saturate(1.3) contrast(1.3); }
+            100% { opacity: 0.35; filter: hue-rotate(0deg) saturate(1.4) contrast(1.2); }
+        }
+
         .face {
             position: absolute;
             width: 200px;
@@ -70,8 +101,22 @@
             border: 2px solid rgba(0, 0, 0, 0.1);
             backdrop-filter: blur(5px);
             cursor: pointer;
-            transition: background 0.8s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease;
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.07);
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+        }
+
+        .face.glitching {
+            will-change: filter; /* Optimize for animations */
+            filter: contrast(1.3) brightness(1.2) saturate(1.3);
+            animation: faceGlitch 0.08s infinite; /* Match static flicker timing */
+        }
+
+        @keyframes faceGlitch {
+            0% { filter: contrast(1.3) brightness(1.2) saturate(1.3); }
+            50% { filter: contrast(1.4) brightness(1.3) saturate(1.4) hue-rotate(10deg); }
+            100% { filter: contrast(1.3) brightness(1.2) saturate(1.3); }
         }
 
         .face:hover {
@@ -236,7 +281,46 @@
             }
         }
 
+        /* Add glitch container to preserve 3D */
+        .glitch-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            pointer-events: none;
+        }
 
+        /* Add scanline effect */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                transparent 50%,
+                rgba(0, 0, 0, 0.1) 50%
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            opacity: 0;
+            z-index: 11;
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+            will-change: transform; /* Optimize for animations */
+            transform: translateZ(0); /* Force GPU acceleration */
+        }
+
+        .scanlines.active {
+            opacity: 0.15;
+            animation: scanlineMove 0.15s linear infinite; /* Slower scanlines for better performance */
+        }
+
+        @keyframes scanlineMove {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(4px); }
+        }
     </style>
 </head>
 <body>
@@ -250,6 +334,10 @@
     <div class="container">
         <div class="cube-container">
             <div class="cube" id="cube">
+                <div class="glitch-container">
+                    <div class="static-overlay"></div>
+                    <div class="scanlines"></div>
+                </div>
                 <div class="face front" data-face="magazine"></div>
                 <div class="face back" data-face="events"></div>
                 <div class="face right" data-face="shop"></div>
@@ -342,10 +430,33 @@
                 
                 // Update auto-rotation properties
                 this.autoRotate = true;
-                this.autoRotateSpeed = 0.2;
+                this.autoRotateSpeed = 0.4;
                 this.autoRotatePaused = false;
                 this.inactivityTimeout = null;
                 this.inactivityDelay = 1500; // 1.5 seconds delay before resuming
+                
+                // Adjust glitch timing parameters
+                this.glitchEnabled = false;
+                this.glitchIntensity = 200.0;
+                this.glitchFrequency = 0.05;
+                this.glitchDuration = 70; // Doubled from 35
+                this.rotationGlitchIntensity = 40.0;
+                this.isGlitching = false;
+                this.glitchTimeout = null;
+                this.originalTransform = '';
+                this.lastGlitchTime = 0;
+                this.minGlitchInterval = 500;
+                this.maxGlitchInterval = 1500;
+                this.nextGlitchTime = Date.now() + 500;
+                
+                // Performance optimization flags
+                this.isAnimating = false;
+                this.animationFrame = null;
+                
+                this.staticOverlay = document.querySelector('.static-overlay');
+                this.scanlines = document.querySelector('.scanlines');
+                this.glitchContainer = document.querySelector('.glitch-container');
+                this.faces = document.querySelectorAll('.face');
                 
                 this.init();
             }
@@ -359,6 +470,11 @@
                 
                 // Start auto-rotation
                 this.startAutoRotate();
+                
+                // Add cleanup on page unload
+                window.addEventListener('unload', () => {
+                    this.cleanup();
+                });
             }
 
             bindEvents() {
@@ -388,11 +504,36 @@
                     this.pauseAutoRotate(); // Pause on panel click
                 });
 
-                // Double click event
+                // Double click event for transition overlay only
                 this.cube.addEventListener('dblclick', (e) => {
                     if (!this.isDragging && !this.isTransitioning) {
                         this.showTransitionOverlay();
                         this.pauseAutoRotate(); // Pause on double click
+                    }
+                });
+
+                // Add keyboard shortcut for testing glitch
+                document.addEventListener('keydown', (e) => {
+                    if (e.key.toLowerCase() === 'g') {
+                        this.glitchEnabled = !this.glitchEnabled;
+                        if (this.glitchEnabled) {
+                            this.forceGlitch(); // Force a glitch when enabled
+                        }
+                        // Show indicator
+                        const indicator = document.createElement('div');
+                        indicator.style.position = 'fixed';
+                        indicator.style.top = '20px';
+                        indicator.style.left = '50%';
+                        indicator.style.transform = 'translateX(-50%)';
+                        indicator.style.padding = '10px 20px';
+                        indicator.style.background = 'rgba(0, 0, 0, 0.8)';
+                        indicator.style.color = 'white';
+                        indicator.style.borderRadius = '5px';
+                        indicator.style.fontFamily = 'monospace';
+                        indicator.style.zIndex = '1000';
+                        indicator.textContent = `Glitch Effect: ${this.glitchEnabled ? 'ON' : 'OFF'}`;
+                        document.body.appendChild(indicator);
+                        setTimeout(() => indicator.remove(), 1000);
                     }
                 });
 
@@ -650,14 +791,144 @@
                 
                 const animate = () => {
                     if (this.autoRotate && !this.autoRotatePaused && !this.isDragging) {
-                        this.rotation.y += this.autoRotateSpeed; // Reverted to direct rotation
+                        this.rotation.y += this.autoRotateSpeed;
                         this.updateCubeTransform();
                         this.detectClosestFace();
                     }
-                    requestAnimationFrame(animate);
+                    
+                    // Only check for glitch if enabled and not already glitching
+                    if (this.glitchEnabled && !this.isGlitching) {
+                        this.applyGlitchEffect();
+                    }
+                    
+                    this.animationFrame = requestAnimationFrame(animate);
                 };
                 
-                requestAnimationFrame(animate);
+                // Start animation
+                this.isAnimating = true;
+                this.animationFrame = requestAnimationFrame(animate);
+            }
+
+            applyGlitchEffect() {
+                if (!this.glitchEnabled || this.isGlitching) return;
+
+                const now = Date.now();
+                if (now < this.nextGlitchTime) return;
+
+                // Force a glitch sequence
+                this.isGlitching = true;
+                this.originalTransform = this.cube.style.transform;
+                
+                // Activate effects
+                this.staticOverlay.classList.add('active');
+                this.scanlines.classList.add('active');
+                this.faces.forEach(face => face.classList.add('glitching'));
+                
+                // Get current rotation values
+                const currentTransform = this.cube.style.transform;
+                const rotationMatch = currentTransform.match(/rotateX\(([-\d.]+)deg\)\s*rotateY\(([-\d.]+)deg\)/);
+                
+                if (rotationMatch) {
+                    const currentX = parseFloat(rotationMatch[1]);
+                    const currentY = parseFloat(rotationMatch[2]);
+                    
+                    // More randomized number of glitches
+                    let glitchCount = 0;
+                    const maxGlitches = 6 + Math.floor(Math.random() * 5); // Increased range (6-10 glitches)
+                    
+                    // Randomize primary direction and multiplier for each glitch
+                    const getRandomDirection = () => Math.floor(Math.random() * 3);
+                    const getRandomMultiplier = () => 0.7 + Math.random() * 0.6; // 0.7-1.3 range
+                    
+                    const applyGlitch = () => {
+                        if (glitchCount >= maxGlitches) {
+                            // Reset everything
+                            this.cube.style.transform = this.originalTransform;
+                            this.isGlitching = false;
+                            this.staticOverlay.classList.remove('active');
+                            this.scanlines.classList.remove('active');
+                            this.faces.forEach(face => face.classList.remove('glitching'));
+                            
+                            // Set next glitch time with more randomization
+                            const randomInterval = this.minGlitchInterval + 
+                                Math.random() * (this.maxGlitchInterval - this.minGlitchInterval);
+                            this.nextGlitchTime = Date.now() + randomInterval;
+                            return;
+                        }
+
+                        // Get new random direction and multiplier for each glitch
+                        const primaryDirection = getRandomDirection();
+                        const directionMultiplier = getRandomMultiplier();
+                        
+                        // More randomized shake intensity
+                        const baseShakeMultiplier = 1.0 + Math.random() * 2.0; // 1.0-3.0 range
+                        const shakeVariation = 0.5 + Math.random() * 1.5; // 0.5-2.0 range
+                        let shakeX = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
+                        let shakeY = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
+                        let shakeZ = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
+                        
+                        // Random center bias for each axis
+                        const centerBias = 0.7 + Math.random() * 0.4; // 0.7-1.1 range
+                        shakeX *= centerBias;
+                        shakeY *= centerBias;
+                        shakeZ *= centerBias;
+                        
+                        // More randomized direction focus
+                        if (primaryDirection === 0) {
+                            shakeX *= (1 + directionMultiplier);
+                            shakeY *= (1 - directionMultiplier * 0.7);
+                            shakeZ *= (1 - directionMultiplier * 0.7);
+                        } else if (primaryDirection === 1) {
+                            shakeX *= (1 - directionMultiplier * 0.7);
+                            shakeY *= (1 + directionMultiplier);
+                            shakeZ *= (1 - directionMultiplier * 0.7);
+                        } else {
+                            shakeX *= (1 - directionMultiplier * 0.7);
+                            shakeY *= (1 - directionMultiplier * 0.7);
+                            shakeZ *= (1 + directionMultiplier);
+                        }
+                        
+                        // More randomized rotation
+                        const rotMultiplier = 1.0 + Math.random() * 2.0; // 1.0-3.0 range
+                        const rotVariation = 0.5 + Math.random() * 1.5; // 0.5-2.0 range
+                        const rotGlitchX = (Math.random() - 0.5) * this.rotationGlitchIntensity * rotMultiplier * rotVariation;
+                        const rotGlitchY = (Math.random() - 0.5) * this.rotationGlitchIntensity * rotMultiplier * rotVariation;
+                        
+                        // Apply transform with randomized movement
+                        this.cube.style.transform = `
+                            translate3d(${shakeX}px, ${shakeY}px, ${shakeZ}px)
+                            rotateX(${currentX + rotGlitchX}deg)
+                            rotateY(${currentY + rotGlitchY}deg)
+                        `;
+
+                        // More randomized color shift
+                        const hueShift = (Math.random() - 0.5) * 60; // Increased range (-30 to 30)
+                        const saturation = 1.4 + Math.random() * 0.4; // 1.4-1.8 range
+                        const contrast = 1.2 + Math.random() * 0.4; // 1.2-1.6 range
+                        this.staticOverlay.style.filter = `hue-rotate(${hueShift}deg) saturate(${saturation}) contrast(${contrast})`;
+
+                        glitchCount++;
+                        // Randomize time between glitches
+                        const glitchDelay = 8 + Math.random() * 6; // 8-14ms range
+                        setTimeout(applyGlitch, glitchDelay);
+                    };
+
+                    applyGlitch();
+                }
+            }
+
+            // Add a method to force a glitch for testing
+            forceGlitch() {
+                this.nextGlitchTime = Date.now();
+                this.applyGlitchEffect();
+            }
+
+            // Add cleanup method
+            cleanup() {
+                if (this.animationFrame) {
+                    cancelAnimationFrame(this.animationFrame);
+                }
+                this.isAnimating = false;
             }
         }
 
