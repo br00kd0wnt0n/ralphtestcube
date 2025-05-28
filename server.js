@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const app = express();
 
 // Get port from environment variable or use 3000 as fallback
@@ -7,58 +8,67 @@ const PORT = process.env.PORT || 3000;
 
 // Add detailed logging middleware
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    console.log('Headers:', req.headers);
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.url}`);
+    console.log(`[${timestamp}] Headers:`, JSON.stringify(req.headers, null, 2));
     next();
 });
 
+// Log startup information
+const publicDir = path.join(__dirname, 'public');
+console.log('Server startup information:');
+console.log('- Current working directory:', process.cwd());
+console.log('- Server directory:', __dirname);
+console.log('- Public directory:', publicDir);
+console.log('- Environment:', process.env.NODE_ENV || 'development');
+console.log('- Port:', PORT);
+
+// Verify public directory exists
+if (!fs.existsSync(publicDir)) {
+    console.error('ERROR: Public directory does not exist at:', publicDir);
+    process.exit(1);
+}
+
+// List files in public directory
+try {
+    const files = fs.readdirSync(publicDir);
+    console.log('- Files in public directory:', files);
+} catch (error) {
+    console.error('ERROR: Could not read public directory:', error);
+    process.exit(1);
+}
+
 // Serve static files from the public directory with explicit options
-app.use(express.static(path.join(__dirname, 'public'), {
+app.use(express.static(publicDir, {
     dotfiles: 'ignore',
     etag: true,
     index: false,
-    maxAge: '1h'
+    maxAge: '1h',
+    fallthrough: false // This will make express.static throw 404s instead of falling through
 }));
 
 // Handle favicon requests
 app.get('/favicon.ico', (req, res) => {
-    res.status(204).end(); // No content for favicon
+    res.status(204).end();
 });
 
-// Explicitly handle root path
-app.get('/', (req, res) => {
-    console.log('Handling root path request');
-    try {
-        const indexPath = path.join(__dirname, 'public', 'index.html');
-        console.log('Attempting to serve index.html from:', indexPath);
-        res.sendFile(indexPath, (err) => {
-            if (err) {
-                console.error('Error sending index.html:', err);
-                res.status(500).send('Error loading page');
-            }
-        });
-    } catch (error) {
-        console.error('Error serving index.html:', error);
-        res.status(500).send('Internal Server Error');
+// Serve index.html for all routes
+app.get('*', (req, res, next) => {
+    const indexPath = path.join(publicDir, 'index.html');
+    console.log(`[${new Date().toISOString()}] Attempting to serve index.html from:`, indexPath);
+    
+    // Verify index.html exists
+    if (!fs.existsSync(indexPath)) {
+        console.error('ERROR: index.html not found at:', indexPath);
+        return res.status(500).send('Server configuration error: index.html not found');
     }
-});
 
-// Serve the main HTML file for all other routes
-app.get('*', (req, res) => {
-    console.log('Handling wildcard route:', req.url);
-    try {
-        const indexPath = path.join(__dirname, 'public', 'index.html');
-        console.log('Attempting to serve index.html from:', indexPath);
-        res.sendFile(indexPath, (err) => {
-            if (err) {
-                console.error('Error sending index.html:', err);
-                res.status(500).send('Error loading page');
-            }
-        });
-    } catch (error) {
-        console.error('Error serving index.html:', error);
-        res.status(500).send('Internal Server Error');
-    }
+    res.sendFile(indexPath, (err) => {
+        if (err) {
+            console.error('Error sending index.html:', err);
+            next(err);
+        }
+    });
 });
 
 // Error handling middleware
@@ -72,10 +82,6 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
     const host = server.address();
     console.log(`Server is running on ${host.address}:${host.port}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`Current working directory: ${process.cwd()}`);
-    console.log(`Public directory path: ${path.join(__dirname, 'public')}`);
-    console.log(`Available files in public directory:`, require('fs').readdirSync(path.join(__dirname, 'public')));
 });
 
 // Handle server errors
@@ -84,6 +90,7 @@ server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
         console.error(`Port ${PORT} is already in use`);
     }
+    process.exit(1);
 });
 
 // Handle process termination

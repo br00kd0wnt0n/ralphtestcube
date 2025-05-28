@@ -5,12 +5,14 @@ builder = "nixpacks"
 startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 300
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 3
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["npm install"]
+cmds = ["npm ci"]
 
 [phases.start]
 cmds = ["npm start"]
@@ -21,4 +23,5 @@ timeout = "10s"
 retries = 3
 
 [env]
-NODE_ENV = "production" 
+NODE_ENV = "production"
+PORT = "3000" 
