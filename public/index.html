@@ -274,7 +274,7 @@
                 this.body = document.body;
                 this.isDragging = false;
                 this.previousMousePosition = { x: 0, y: 0 };
-                this.rotation = { x: -15, y: 0 };
+                this.rotation = { x: -25, y: 0 };
                 this.currentFace = 'magazine';
                 this.backgrounds = {
                     magazine: 'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_26c2e7b2-cc45-43dc-aaf2-e7473dbc869c_0.png',
@@ -300,35 +300,35 @@
                 
                 this.faces = {
                     magazine: { 
-                        rotation: { x: -15, y: 0 }, 
+                        rotation: { x: -25, y: 0 },
                         color: '#667eea',
                         title: 'MAGAZINE',
                         description: 'Latest stories and insights',
                         backgroundColor: '#d5d9ff'
                     },
                     events: { 
-                        rotation: { x: -15, y: 180 }, 
+                        rotation: { x: -25, y: 180 },
                         color: '#f093fb',
                         title: 'EVENTS',
                         description: 'Upcoming experiences and gatherings',
                         backgroundColor: '#fad5fa'
                     },
                     shop: { 
-                        rotation: { x: -15, y: 90 }, 
+                        rotation: { x: -25, y: 90 },
                         color: '#4facfe',
                         title: 'SHOP',
                         description: 'Curated products and collections',
                         backgroundColor: '#ccf0ff'
                     },
                     friends: { 
-                        rotation: { x: -15, y: -90 }, 
+                        rotation: { x: -25, y: -90 },
                         color: '#43e97b',
                         title: 'FRIENDS',
                         description: 'Community and connections',
                         backgroundColor: '#ccfad5'
                     },
                     creative: { 
-                        rotation: { x: 75, y: 0 }, 
+                        rotation: { x: 75, y: 0 },
                         color: '#fa709a',
                         title: 'CREATIVE',
                         description: 'Artistic projects and inspiration',
@@ -340,6 +340,13 @@
                 this.transitionText = document.querySelector('.transition-text');
                 this.isTransitioning = false;
                 
+                // Update auto-rotation properties
+                this.autoRotate = true;
+                this.autoRotateSpeed = 0.2;
+                this.autoRotatePaused = false;
+                this.inactivityTimeout = null;
+                this.inactivityDelay = 1500; // 1.5 seconds delay before resuming
+                
                 this.init();
             }
 
@@ -349,6 +356,9 @@
                 this.updateNavigation();
                 this.updateBackground();
                 this.bindEvents();
+                
+                // Start auto-rotation
+                this.startAutoRotate();
             }
 
             bindEvents() {
@@ -367,6 +377,7 @@
                     face.addEventListener('click', (e) => {
                         if (!this.isDragging) {
                             this.navigateToPage(e.target.dataset.face);
+                            this.pauseAutoRotate(); // Pause on face click
                         }
                     });
                 });
@@ -374,23 +385,27 @@
                 // Navigation panel clicks
                 document.querySelector('.navigation-panel').addEventListener('click', () => {
                     this.navigateToPage(this.currentFace);
+                    this.pauseAutoRotate(); // Pause on panel click
                 });
 
                 // Double click event
                 this.cube.addEventListener('dblclick', (e) => {
                     if (!this.isDragging && !this.isTransitioning) {
                         this.showTransitionOverlay();
+                        this.pauseAutoRotate(); // Pause on double click
                     }
                 });
 
                 // Click on overlay to hide it
                 this.transitionOverlay.addEventListener('click', () => {
                     this.hideTransitionOverlay();
+                    this.pauseAutoRotate(); // Pause on overlay click
                 });
             }
 
             startDrag(e) {
                 this.isDragging = true;
+                this.autoRotatePaused = true; // Pause auto-rotation when user starts dragging
                 const clientX = e.clientX || (e.touches && e.touches[0].clientX);
                 const clientY = e.clientY || (e.touches && e.touches[0].clientY);
                 this.previousMousePosition = { x: clientX, y: clientY };
@@ -425,6 +440,21 @@
             endDrag() {
                 this.isDragging = false;
                 this.body.style.cursor = 'grab';
+                this.pauseAutoRotate(); // Use pauseAutoRotate to handle the timeout
+            }
+
+            pauseAutoRotate() {
+                this.autoRotatePaused = true;
+                
+                // Clear any existing timeout
+                if (this.inactivityTimeout) {
+                    clearTimeout(this.inactivityTimeout);
+                }
+                
+                // Set timeout to resume auto-rotation after 1.5 seconds
+                this.inactivityTimeout = setTimeout(() => {
+                    this.autoRotatePaused = false;
+                }, this.inactivityDelay);
             }
 
             updateCubeTransform() {
@@ -613,6 +643,21 @@
                 setTimeout(() => {
                     this.isTransitioning = false;
                 }, 500); // Match transition duration
+            }
+
+            startAutoRotate() {
+                if (!this.autoRotate) return;
+                
+                const animate = () => {
+                    if (this.autoRotate && !this.autoRotatePaused && !this.isDragging) {
+                        this.rotation.y += this.autoRotateSpeed; // Reverted to direct rotation
+                        this.updateCubeTransform();
+                        this.detectClosestFace();
+                    }
+                    requestAnimationFrame(animate);
+                };
+                
+                requestAnimationFrame(animate);
             }
         }
 
