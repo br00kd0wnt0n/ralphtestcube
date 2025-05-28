@@ -22,6 +22,8 @@ console.log('- NODE_ENV:', process.env.NODE_ENV || 'not set');
 console.log('- PORT:', PORT);
 console.log('- Node version:', process.version);
 console.log('- Platform:', process.platform);
+console.log('- Current working directory:', process.cwd());
+console.log('- __dirname:', __dirname);
 
 // Log absolute paths and directory structure
 console.log('\n=== Server Path Configuration ===');
@@ -148,7 +150,7 @@ app.use(express.static(PUBLIC_DIR, {
     etag: true,
     index: false,
     maxAge: '1h',
-    fallthrough: false
+    fallthrough: true  // Changed to true to allow other routes to handle requests
 }));
 
 // Handle favicon requests
@@ -184,7 +186,8 @@ app.get('/', (req, res) => {
                     RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
                     PORT: PORT,
                     NODE_VERSION: process.version,
-                    PLATFORM: process.platform
+                    PLATFORM: process.platform,
+                    CWD: process.cwd()
                 }
             });
         }
@@ -214,7 +217,8 @@ app.get('/', (req, res) => {
                         RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
                         PORT: PORT,
                         NODE_VERSION: process.version,
-                        PLATFORM: process.platform
+                        PLATFORM: process.platform,
+                        CWD: process.cwd()
                     }
                 });
             }
@@ -237,7 +241,8 @@ app.get('/', (req, res) => {
                             RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
                             PORT: PORT,
                             NODE_VERSION: process.version,
-                            PLATFORM: process.platform
+                            PLATFORM: process.platform,
+                            CWD: process.cwd()
                         }
                     });
                 }
@@ -261,7 +266,8 @@ app.get('/', (req, res) => {
                 RAILWAY_WORKSPACE_DIR: process.env.RAILWAY_WORKSPACE_DIR,
                 PORT: PORT,
                 NODE_VERSION: process.version,
-                PLATFORM: process.platform
+                PLATFORM: process.platform,
+                CWD: process.cwd()
             }
         });
     }
