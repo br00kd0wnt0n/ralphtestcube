@@ -105,12 +105,22 @@
             box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.07);
             transform-style: preserve-3d;
             backface-visibility: hidden;
+            will-change: transform; /* Optimize for animations */
         }
 
         .face.glitching {
-            will-change: filter; /* Optimize for animations */
+            will-change: transform, filter; /* Optimize for animations */
             filter: contrast(1.3) brightness(1.2) saturate(1.3);
             animation: faceGlitch 0.08s infinite; /* Match static flicker timing */
+            transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1); /* Faster transition for glitch */
+        }
+
+        .face.breaking {
+            transition: transform 0.05s cubic-bezier(0.4, 0, 0.2, 1); /* Very fast transition for breaking */
+        }
+
+        .face.reassembling {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Smooth transition for reassembly */
         }
 
         @keyframes faceGlitch {
@@ -364,29 +374,9 @@
                 this.previousMousePosition = { x: 0, y: 0 };
                 this.rotation = { x: -25, y: 0 };
                 this.currentFace = 'magazine';
-                this.backgrounds = {
-                    magazine: 'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_26c2e7b2-cc45-43dc-aaf2-e7473dbc869c_0.png',
-                    events:   'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_26c2e7b2-cc45-43dc-aaf2-e7473dbc869c_1.png',
-                    shop:     'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_0.png',
-                    friends:  'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_1.png',
-                    creative: 'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_2.png',
-                    bottom:   'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_3.png',
-                };
-                this.overlayColors = {
-                    magazine: 'rgba(102,126,234,0.7)',
-                    events:   'rgba(240,147,251,0.7)',
-                    shop:     'rgba(79,172,254,0.7)',
-                    friends:  'rgba(67,233,123,0.7)',
-                    creative: 'rgba(250,112,154,0.7)',
-                    bottom:   'rgba(90,114,233,0.7)',
-                };
-                this.bgFadeEls = [
-                    document.getElementById('backgroundFade1'),
-                    document.getElementById('backgroundFade2')
-                ];
-                this.activeBg = 0;
                 
-                this.faces = {
+                // Define faces data first
+                this.faceData = {
                     magazine: { 
                         rotation: { x: -25, y: 0 },
                         color: '#667eea',
@@ -421,25 +411,57 @@
                         title: 'CREATIVE',
                         description: 'Artistic projects and inspiration',
                         backgroundColor: '#ffebcc'
+                    },
+                    bottom: { 
+                        rotation: { x: -75, y: 0 },
+                        color: '#667eea',
+                        title: 'MAGAZINE',
+                        description: 'Latest stories and insights',
+                        backgroundColor: '#d5d9ff'
                     }
                 };
 
+                // Then define backgrounds
+                this.backgrounds = {
+                    magazine: 'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_26c2e7b2-cc45-43dc-aaf2-e7473dbc869c_0.png',
+                    events:   'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_26c2e7b2-cc45-43dc-aaf2-e7473dbc869c_1.png',
+                    shop:     'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_0.png',
+                    friends:  'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_1.png',
+                    creative: 'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_2.png',
+                    bottom:   'backgrounds/superterranea_8bit_isometric_map_of_a_landscape_that_incorpor_3cdeb3f5-898b-4798-9aae-a1e578cc7c88_3.png',
+                };
+
+                this.overlayColors = {
+                    magazine: 'rgba(102,126,234,0.7)',
+                    events:   'rgba(240,147,251,0.7)',
+                    shop:     'rgba(79,172,254,0.7)',
+                    friends:  'rgba(67,233,123,0.7)',
+                    creative: 'rgba(250,112,154,0.7)',
+                    bottom:   'rgba(90,114,233,0.7)',
+                };
+                
+                this.bgFadeEls = [
+                    document.getElementById('backgroundFade1'),
+                    document.getElementById('backgroundFade2')
+                ];
+                this.activeBg = 0;
+                
                 this.transitionOverlay = document.querySelector('.transition-overlay');
                 this.transitionText = document.querySelector('.transition-text');
                 this.isTransitioning = false;
                 
                 // Update auto-rotation properties
                 this.autoRotate = true;
-                this.autoRotateSpeed = 0.4;
+                this.autoRotateSpeed = 0.3;
                 this.autoRotatePaused = false;
                 this.inactivityTimeout = null;
-                this.inactivityDelay = 1500; // 1.5 seconds delay before resuming
+                this.inactivityDelay = 1500;
                 
                 // Adjust glitch timing parameters
                 this.glitchEnabled = false;
                 this.glitchIntensity = 200.0;
                 this.glitchFrequency = 0.05;
-                this.glitchDuration = 70; // Doubled from 35
+                this.glitchDuration = 70;
                 this.rotationGlitchIntensity = 40.0;
                 this.isGlitching = false;
                 this.glitchTimeout = null;
@@ -456,7 +478,7 @@
                 this.staticOverlay = document.querySelector('.static-overlay');
                 this.scanlines = document.querySelector('.scanlines');
                 this.glitchContainer = document.querySelector('.glitch-container');
-                this.faces = document.querySelectorAll('.face');
+                this.faceElements = document.querySelectorAll('.face');
                 
                 this.init();
             }
@@ -647,13 +669,13 @@
                 
                 let closestFace = 'magazine';
                 
-                // Determine face based on rotation
+                // Determine face based on rotation with more precise thresholds
                 if (normalizedX > 45) {
                     closestFace = 'creative'; // top face
                 } else if (normalizedX < -45) {
-                    closestFace = 'magazine'; // when looking down, default to magazine
+                    closestFace = 'bottom'; // bottom face
                 } else {
-                    // Side faces based on Y rotation
+                    // Side faces based on Y rotation with adjusted thresholds
                     if (normalizedY >= 315 || normalizedY < 45) {
                         closestFace = 'magazine'; // front (0 degrees)
                     } else if (normalizedY >= 45 && normalizedY < 135) {
@@ -665,17 +687,31 @@
                     }
                 }
 
+                // Always update current face and navigation
                 if (closestFace !== this.currentFace) {
+                    console.log('Face changed from', this.currentFace, 'to', closestFace);
                     this.currentFace = closestFace;
-                    this.updateNavigation();
+                    
+                    // Update navigation immediately
+                    const currentSection = document.getElementById('currentSection');
+                    const sectionDescription = document.getElementById('sectionDescription');
+                    const faceData = this.faceData[this.currentFace];
+                    
+                    if (faceData) {
+                        currentSection.textContent = faceData.title;
+                        sectionDescription.textContent = faceData.description;
+                        console.log('Updated navigation to:', faceData.title);
+                    }
+                    
+                    // Update other visual elements
                     this.updateCubeFaceColors();
                     this.updateBackground();
                 }
             }
 
             rotateTo(face) {
-                if (this.faces[face]) {
-                    this.rotation = { ...this.faces[face].rotation };
+                if (this.faceData[face]) {
+                    this.rotation = { ...this.faceData[face].rotation };
                     this.currentFace = face;
                     this.cube.style.transition = 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
                     this.updateCubeTransform();
@@ -690,18 +726,27 @@
             }
 
             updateBackground() {
+                // Only update background if we have a valid face
+                if (!this.currentFace || !this.backgrounds[this.currentFace]) return;
+
                 // Cross-fade backgrounds
                 const nextBg = 1 - this.activeBg;
-                const faceKey = this.currentFace === 'magazine' || this.currentFace === 'bottom' ? this.currentFace : this.currentFace;
-                const img = this.backgrounds[faceKey] || this.backgrounds['magazine'];
+                const faceKey = this.currentFace;
+                const img = this.backgrounds[faceKey];
                 const overlay = this.overlayColors[faceKey] || 'rgba(0,0,0,0.5)';
+                
+                // Set up the next background
                 this.bgFadeEls[nextBg].style.background = `linear-gradient(${overlay},${overlay}), url('${img}')`;
                 this.bgFadeEls[nextBg].style.backgroundPosition = '50% 50%, 50% 50%';
                 this.bgFadeEls[nextBg].style.backgroundSize = 'cover, cover';
                 this.bgFadeEls[nextBg].style.transition = 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+                
+                // Fade out current background
                 this.bgFadeEls[this.activeBg].style.transition = 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
-                this.bgFadeEls[nextBg].style.opacity = 1;
                 this.bgFadeEls[this.activeBg].style.opacity = 0;
+                
+                // Fade in next background
+                this.bgFadeEls[nextBg].style.opacity = 1;
                 this.activeBg = nextBg;
             }
 
@@ -709,14 +754,20 @@
                 const currentSection = document.getElementById('currentSection');
                 const sectionDescription = document.getElementById('sectionDescription');
                 
-                if (this.faces[this.currentFace]) {
-                    currentSection.textContent = this.faces[this.currentFace].title;
-                    sectionDescription.textContent = this.faces[this.currentFace].description;
+                // Get face data from our faceData object
+                const faceData = this.faceData[this.currentFace];
+                if (!faceData) {
+                    console.error('No face data found for:', this.currentFace, 'Available faces:', Object.keys(this.faceData));
+                    return;
                 }
+                
+                currentSection.textContent = faceData.title;
+                sectionDescription.textContent = faceData.description;
+                console.log('Navigation updated to:', faceData.title);
             }
 
             updateCubeFaceColors() {
-                const faces = document.querySelectorAll('.face');
+                const faces = this.faceElements;
                 
                 // Define the color scheme for each section
                 const colorSchemes = {
@@ -819,10 +870,20 @@
                 this.isGlitching = true;
                 this.originalTransform = this.cube.style.transform;
                 
+                // Store original face transforms
+                const faces = document.querySelectorAll('.face');
+                const originalFaceTransforms = Array.from(faces).map(face => ({
+                    element: face,
+                    transform: face.style.transform
+                }));
+                
                 // Activate effects
                 this.staticOverlay.classList.add('active');
                 this.scanlines.classList.add('active');
-                this.faces.forEach(face => face.classList.add('glitching'));
+                faces.forEach(face => {
+                    face.classList.add('glitching');
+                    face.classList.add('breaking');
+                });
                 
                 // Get current rotation values
                 const currentTransform = this.cube.style.transform;
@@ -832,84 +893,137 @@
                     const currentX = parseFloat(rotationMatch[1]);
                     const currentY = parseFloat(rotationMatch[2]);
                     
-                    // More randomized number of glitches
                     let glitchCount = 0;
-                    const maxGlitches = 6 + Math.floor(Math.random() * 5); // Increased range (6-10 glitches)
+                    const maxGlitches = 6 + Math.floor(Math.random() * 5);
                     
-                    // Randomize primary direction and multiplier for each glitch
+                    // Constants for shake control
+                    const MAX_SHAKE_DISTANCE = 37.5; // Increased from 30 by 25%
+                    const CENTER_FORCE = 0.35; // Slightly increased to maintain centering with larger movements
+                    const SHAKE_DECAY = 0.85; // Slightly increased for smoother return
+                    
+                    // Store current position for centering
+                    let currentShakeX = 0;
+                    let currentShakeY = 0;
+                    let currentShakeZ = 0;
+                    
                     const getRandomDirection = () => Math.floor(Math.random() * 3);
-                    const getRandomMultiplier = () => 0.7 + Math.random() * 0.6; // 0.7-1.3 range
+                    const getRandomMultiplier = () => 0.8 + Math.random() * 0.7; // Increased range for more variation
                     
                     const applyGlitch = () => {
                         if (glitchCount >= maxGlitches) {
-                            // Reset everything
-                            this.cube.style.transform = this.originalTransform;
-                            this.isGlitching = false;
-                            this.staticOverlay.classList.remove('active');
-                            this.scanlines.classList.remove('active');
-                            this.faces.forEach(face => face.classList.remove('glitching'));
+                            // Start reassembly with smooth return to center
+                            const returnToCenter = () => {
+                                currentShakeX *= SHAKE_DECAY;
+                                currentShakeY *= SHAKE_DECAY;
+                                currentShakeZ *= SHAKE_DECAY;
+                                
+                                if (Math.abs(currentShakeX) < 0.1 && 
+                                    Math.abs(currentShakeY) < 0.1 && 
+                                    Math.abs(currentShakeZ) < 0.1) {
+                                    // Reset everything after centering
+                                    this.cube.style.transform = this.originalTransform;
+                                    this.isGlitching = false;
+                                    this.staticOverlay.classList.remove('active');
+                                    this.scanlines.classList.remove('active');
+                                    faces.forEach(face => {
+                                        face.classList.remove('glitching');
+                                        face.classList.remove('reassembling');
+                                        face.style.transform = originalFaceTransforms.find(f => f.element === face).transform;
+                                    });
+                                    
+                                    const randomInterval = this.minGlitchInterval + 
+                                        Math.random() * (this.maxGlitchInterval - this.minGlitchInterval);
+                                    this.nextGlitchTime = Date.now() + randomInterval;
+                                    return;
+                                }
+                                
+                                // Apply centering force with smoother transition
+                                this.cube.style.transform = `
+                                    translate3d(${currentShakeX}px, ${currentShakeY}px, ${currentShakeZ}px)
+                                    rotateX(${currentX}deg)
+                                    rotateY(${currentY}deg)
+                                `;
+                                
+                                requestAnimationFrame(returnToCenter);
+                            };
                             
-                            // Set next glitch time with more randomization
-                            const randomInterval = this.minGlitchInterval + 
-                                Math.random() * (this.maxGlitchInterval - this.minGlitchInterval);
-                            this.nextGlitchTime = Date.now() + randomInterval;
+                            faces.forEach(face => {
+                                face.classList.remove('breaking');
+                                face.classList.add('reassembling');
+                            });
+                            
+                            returnToCenter();
                             return;
                         }
 
-                        // Get new random direction and multiplier for each glitch
-                        const primaryDirection = getRandomDirection();
-                        const directionMultiplier = getRandomMultiplier();
+                        // Calculate new shake values with increased range
+                        const baseShakeMultiplier = 1.2 + Math.random() * 1.2; // Increased from 1.0-2.0 to 1.2-2.4
+                        const shakeVariation = 0.4 + Math.random() * 0.8; // Increased from 0.3-1.0 to 0.4-1.2
                         
-                        // More randomized shake intensity
-                        const baseShakeMultiplier = 1.0 + Math.random() * 2.0; // 1.0-3.0 range
-                        const shakeVariation = 0.5 + Math.random() * 1.5; // 0.5-2.0 range
-                        let shakeX = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
-                        let shakeY = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
-                        let shakeZ = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
+                        // Calculate new shake values with more variation
+                        let newShakeX = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
+                        let newShakeY = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation;
+                        let newShakeZ = (Math.random() - 0.5) * this.glitchIntensity * baseShakeMultiplier * shakeVariation * 0.4; // Increased Z movement slightly
                         
-                        // Random center bias for each axis
-                        const centerBias = 0.7 + Math.random() * 0.4; // 0.7-1.1 range
-                        shakeX *= centerBias;
-                        shakeY *= centerBias;
-                        shakeZ *= centerBias;
+                        // Apply constraints to keep cube centered while allowing more movement
+                        const distanceFromCenter = Math.sqrt(
+                            Math.pow(currentShakeX + newShakeX, 2) + 
+                            Math.pow(currentShakeY + newShakeY, 2) + 
+                            Math.pow(currentShakeZ + newShakeZ, 2)
+                        );
                         
-                        // More randomized direction focus
-                        if (primaryDirection === 0) {
-                            shakeX *= (1 + directionMultiplier);
-                            shakeY *= (1 - directionMultiplier * 0.7);
-                            shakeZ *= (1 - directionMultiplier * 0.7);
-                        } else if (primaryDirection === 1) {
-                            shakeX *= (1 - directionMultiplier * 0.7);
-                            shakeY *= (1 + directionMultiplier);
-                            shakeZ *= (1 - directionMultiplier * 0.7);
-                        } else {
-                            shakeX *= (1 - directionMultiplier * 0.7);
-                            shakeY *= (1 - directionMultiplier * 0.7);
-                            shakeZ *= (1 + directionMultiplier);
+                        if (distanceFromCenter > MAX_SHAKE_DISTANCE) {
+                            const scale = MAX_SHAKE_DISTANCE / distanceFromCenter;
+                            newShakeX *= scale;
+                            newShakeY *= scale;
+                            newShakeZ *= scale;
                         }
                         
-                        // More randomized rotation
-                        const rotMultiplier = 1.0 + Math.random() * 2.0; // 1.0-3.0 range
-                        const rotVariation = 0.5 + Math.random() * 1.5; // 0.5-2.0 range
+                        // Apply centering force with smoother transition
+                        currentShakeX = (currentShakeX + newShakeX) * (1 - CENTER_FORCE);
+                        currentShakeY = (currentShakeY + newShakeY) * (1 - CENTER_FORCE);
+                        currentShakeZ = (currentShakeZ + newShakeZ) * (1 - CENTER_FORCE);
+                        
+                        // Apply breaking effect to faces with reduced movement
+                        faces.forEach(face => {
+                            const faceTransform = face.style.transform;
+                            const transformMatch = faceTransform.match(/translateZ\(([-\d.]+)px\)/);
+                            const baseZ = transformMatch ? parseFloat(transformMatch[1]) : 100;
+                            
+                            // Reduced breaking distance
+                            const breakDistance = 10 + Math.random() * 20; // Reduced from 15-50px to 10-30px
+                            const breakX = (Math.random() - 0.5) * breakDistance * 0.5; // Reduced movement
+                            const breakY = (Math.random() - 0.5) * breakDistance * 0.5;
+                            const breakZ = (Math.random() - 0.5) * breakDistance * 0.25; // Even less Z movement
+                            
+                            const newTransform = faceTransform.replace(
+                                /translateZ\([-\d.]+px\)/,
+                                `translate3d(${breakX}px, ${breakY}px, ${baseZ + breakZ}px)`
+                            );
+                            face.style.transform = newTransform;
+                        });
+                        
+                        // More controlled rotation glitch
+                        const rotMultiplier = 0.5 + Math.random() * 1.0; // Reduced from 1.0-3.0 to 0.5-1.5
+                        const rotVariation = 0.3 + Math.random() * 0.7; // Reduced from 0.5-2.0 to 0.3-1.0
                         const rotGlitchX = (Math.random() - 0.5) * this.rotationGlitchIntensity * rotMultiplier * rotVariation;
                         const rotGlitchY = (Math.random() - 0.5) * this.rotationGlitchIntensity * rotMultiplier * rotVariation;
                         
-                        // Apply transform with randomized movement
+                        // Apply transform with controlled movement
                         this.cube.style.transform = `
-                            translate3d(${shakeX}px, ${shakeY}px, ${shakeZ}px)
+                            translate3d(${currentShakeX}px, ${currentShakeY}px, ${currentShakeZ}px)
                             rotateX(${currentX + rotGlitchX}deg)
                             rotateY(${currentY + rotGlitchY}deg)
                         `;
 
-                        // More randomized color shift
-                        const hueShift = (Math.random() - 0.5) * 60; // Increased range (-30 to 30)
-                        const saturation = 1.4 + Math.random() * 0.4; // 1.4-1.8 range
-                        const contrast = 1.2 + Math.random() * 0.4; // 1.2-1.6 range
+                        // More subtle color shift
+                        const hueShift = (Math.random() - 0.5) * 30; // Reduced from 60
+                        const saturation = 1.2 + Math.random() * 0.2; // Reduced from 1.4-1.8
+                        const contrast = 1.1 + Math.random() * 0.2; // Reduced from 1.2-1.6
                         this.staticOverlay.style.filter = `hue-rotate(${hueShift}deg) saturate(${saturation}) contrast(${contrast})`;
 
                         glitchCount++;
-                        // Randomize time between glitches
-                        const glitchDelay = 8 + Math.random() * 6; // 8-14ms range
+                        const glitchDelay = 8 + Math.random() * 6;
                         setTimeout(applyGlitch, glitchDelay);
                     };
 
